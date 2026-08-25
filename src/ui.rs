@@ -392,10 +392,6 @@ impl Overlay {
         self.stack.set_visible_child_name("clips");
         for (index, clip) in clips.iter().enumerate() {
             let card = clip_card(clip);
-            let click = gtk::GestureClick::new();
-            // click handler attached by Overlay Rc in new(); here we only build widgets.
-            // We'll attach in rebuild from Rc via a callback slot...
-            let _ = (click, index);
             if index == selected {
                 card.add_css_class("selected");
             }

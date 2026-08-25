@@ -1,7 +1,8 @@
+use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gdk4::prelude::*;
 use serde::Deserialize;
@@ -58,16 +59,28 @@ fn run(
         }
     }
     if let Some(limit) = timeout {
-        let start = std::time::Instant::now();
+        let deadline = Instant::now() + limit;
         loop {
-            match child.try_wait()? {
-                Some(_) => return child.wait_with_output(),
-                None if start.elapsed() > limit => {
-                    let _ = child.kill();
-                    return child.wait_with_output();
+            if let Some(status) = child.try_wait()? {
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                if let Some(mut s) = child.stdout.take() {
+                    let _ = s.read_to_end(&mut stdout);
                 }
-                None => thread::sleep(Duration::from_millis(20)),
+                if let Some(mut s) = child.stderr.take() {
+                    let _ = s.read_to_end(&mut stderr);
+                }
+                return Ok(std::process::Output {
+                    status,
+                    stdout,
+                    stderr,
+                });
             }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                return child.wait_with_output();
+            }
+            thread::sleep(Duration::from_millis(20));
         }
     }
     child.wait_with_output()

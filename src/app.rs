@@ -128,6 +128,16 @@ pub fn run(startup_command: &str) -> glib::ExitCode {
 }
 
 fn handle(state: &Rc<RefCell<Option<AppState>>>, command: &str) {
+    if matches!(command, "quit" | "stop") {
+        let app = state
+            .borrow()
+            .as_ref()
+            .and_then(|st| st.overlay.window.application());
+        if let Some(app) = app {
+            app.quit();
+        }
+        return;
+    }
     let st = state.borrow();
     let Some(st) = st.as_ref() else {
         return;
@@ -143,11 +153,6 @@ fn handle(state: &Rc<RefCell<Option<AppState>>>, command: &str) {
         }
         "show" => st.overlay.show_rc(current_window()),
         "hide" => st.overlay.hide_rc(),
-        "quit" | "stop" => {
-            if let Some(app) = st.overlay.window.application() {
-                app.quit();
-            }
-        }
         other => log::warn!("unknown command: {other}"),
     }
 }

@@ -31,6 +31,8 @@ if ! command -v cargo >/dev/null; then
 fi
 
 mkdir -p "$DEST" "$BIN" "$APP" "$ICON"
+# Drop the old Python install if it is still sitting here.
+rm -rf "$DEST/omapaste"
 cp -a "$SRC/LICENSE" "$SRC/README.md" "$DEST/"
 install -Dm644 "$SRC/share/omapaste.desktop" "$APP/omapaste.desktop"
 install -Dm644 "$SRC/share/omapaste.svg" "$ICON/omapaste.svg"
