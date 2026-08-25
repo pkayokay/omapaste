@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Omapaste
+Comment=Clipboard history for Omarchy
+Exec=omapaste toggle
+Icon=omapaste
+Terminal=false
+Type=Application
+Categories=Utility;
+Keywords=clipboard;paste;history;omarchy;
+StartupNotify=false
+DBusActivatable=false
+X-GNOME-Autostart-enabled=false
