@@ -721,7 +721,7 @@ impl Overlay {
         }
         if !ctrl && !self.is_searching() {
             if let Some(ch) = key.to_unicode() {
-                if ch.is_ascii_graphic() || ch == ' ' {
+                if !ch.is_control() {
                     self.open_search(&ch.to_string());
                     return glib::Propagation::Stop;
                 }
