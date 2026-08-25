@@ -68,7 +68,6 @@ def css_for(theme: Theme) -> str:
     bg = theme.get("background")
     bg2 = theme.get("lighter_background", theme.get("dark_background", bg))
     fg = theme.get("bright_foreground", theme.get("foreground"))
-    muted = theme.get("dark_foreground", theme.get("muted"))
     accent = theme.get("accent")
     return f"""
 window.omapaste {{
@@ -96,7 +95,7 @@ window.omapaste {{
 }}
 
 .op-count, .op-hint {{
-  color: {muted};
+  color: alpha({fg}, 0.70);
   font-size: 11px;
 }}
 
@@ -110,6 +109,10 @@ window.omapaste {{
 
 .op-search:focus {{
   border-color: {accent};
+}}
+
+.op-search placeholder {{
+  color: alpha({fg}, 0.45);
 }}
 
 .op-card {{
@@ -188,7 +191,7 @@ window.omapaste {{
 }}
 
 .op-empty {{
-  color: {muted};
+  color: alpha({fg}, 0.70);
   font-size: 13px;
 }}
 
