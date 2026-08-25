@@ -119,15 +119,18 @@ The bar’s help icon (next to shortcuts) opens that page. The shortcuts popover
 
 ## Development
 
+Contributor and agent notes (modules, tests, UI reload): [AGENTS.md](AGENTS.md).
+
 ```bash
 cargo test
 cargo test -- --ignored --test-threads=1   # GTK overlay smoke; needs a display
-cargo build --release
-./install.sh          # install the binary only
-./install.sh --hypr   # also bind Super+Shift+V and autostart
-omapaste daemon
-omapaste toggle
+cargo fmt
+./install.sh                               # release build → ~/.local/bin
+systemctl --user restart omapaste.service  # pick up the new binary
+# Super+Shift+V to open the bar
 ```
+
+`./install.sh --hypr` also binds Super+Shift+V and autostarts the daemon. Do not run `omapaste toggle` from tests — it talks to the live daemon over D-Bus.
 
 ## License
 
