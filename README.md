@@ -60,6 +60,7 @@ Without `--hypr`, install the binary only and bind it yourself.
 | Ctrl+K | Cycle keep time (1h → 1d → 7d → forever) |
 | Type or click the magnifying glass | Search (History stays in the header) |
 | Keyboard icon | Shortcut list |
+| Help icon | Open the GitHub issue tracker |
 | Esc | Close shortcuts, then search, then the bar |
 
 ## Keep time
@@ -114,7 +115,7 @@ Not in v0.1, on purpose:
 
 Bugs, ideas, and patches: [github.com/pkayokay/omapaste/issues](https://github.com/pkayokay/omapaste/issues).
 
-The keyboard-shortcuts popover in the bar also shows that link. A first-run sample clip is the same URL so you can copy it.
+The bar’s help icon (next to shortcuts) opens that page. The shortcuts popover also shows the link, and a first-run sample clip is the same URL so you can copy it.
 
 ## Development
 

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub const APP_ID: &str = "io.github.pkayokay.omapaste";
 pub const APP_NAME: &str = "omapaste";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const ISSUES_URL: &str = "https://github.com/pkayokay/omapaste/issues";
 
 pub fn home() -> PathBuf {
     env::var_os("HOME")

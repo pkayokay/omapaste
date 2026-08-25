@@ -13,6 +13,7 @@ use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use crate::config::Config;
 use crate::paste::{copy_image, copy_text, paste_now, TargetWindow};
 use crate::store::{content_hash, next_keep, Clip, Store};
+use crate::paths::ISSUES_URL;
 use crate::theme::{css_for, load_theme};
 
 const BAR_HEIGHT: i32 = 304;
@@ -150,10 +151,25 @@ impl Overlay {
         let shortcuts = shortcuts_popover();
         shortcuts.set_parent(&shortcuts_btn);
 
+        let issues_btn = gtk::Button::new();
+        issues_btn.set_has_frame(false);
+        issues_btn.set_icon_name("help-about-symbolic");
+        issues_btn.set_tooltip_text(Some("Report an issue"));
+        issues_btn.add_css_class("op-icon-btn");
+        issues_btn.connect_clicked(|_| {
+            let _ = std::process::Command::new("xdg-open")
+                .arg(ISSUES_URL)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+        });
+
         header.append(&brand);
         header.append(&search);
         header.append(&search_open_btn);
         header.append(&shortcuts_btn);
+        header.append(&issues_btn);
 
         let scroller = gtk::ScrolledWindow::new();
         scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
