@@ -125,8 +125,8 @@ Contributor and agent notes (modules, tests, UI reload): [AGENTS.md](AGENTS.md).
 cargo test
 cargo test -- --ignored --test-threads=1   # GTK overlay smoke; needs a display
 cargo fmt
-./install.sh                               # release build → ~/.local/bin
-systemctl --user restart omapaste.service  # pick up the new binary
+./install.sh
+omapaste quit && omapaste daemon           # load the new binary
 # Super+Shift+V to open the bar
 ```
 

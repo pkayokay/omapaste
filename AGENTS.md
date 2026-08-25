@@ -1,80 +1,140 @@
 # AGENTS.md
 
-Notes for people and coding agents working on omapaste.
+Development contract for omapaste. User-facing docs: [README.md](README.md).
 
-Omapaste is a **Rust GTK4** clipboard-history bar for Omarchy / Hyprland. It is one GTK application: the daemon owns the window and clipboard watcher; `toggle` / `show` / `hide` talk to that process over the session bus.
+Omapaste is a **Rust GTK4** clipboard-history bar for Omarchy / Hyprland. It is **one GTK application**: the daemon owns the window and the clipboard watcher. `toggle` / `show` / `hide` / `quit` are extra invocations of the same binary; they talk to that process over the session bus (`io.github.pkayokay.omapaste`). A second `omapaste daemon` does not replace a running binary — quit first.
 
-The user-facing overview is in [README.md](README.md). This file is the development contract.
+## First-time setup
 
-## Commands
+Needs a Wayland/Hyprland session to run the bar. `cargo test` does not.
+
+On Omarchy / Arch:
+
+```bash
+sudo pacman -S --needed rust gtk4 gtk4-layer-shell wl-clipboard wtype pkgconf python
+git clone https://github.com/pkayokay/omapaste.git
+cd omapaste
+cargo test
+./install.sh --hypr
+omapaste daemon          # or reboot; --hypr adds Hyprland autostart
+```
+
+`--hypr` binds **Super+Shift+V**, autostarts `omapaste daemon`, and adds a layer rule so Hyprland does not fade the bar (it slides itself). Super+Ctrl+V stays on Omarchy's picker.
+
+Without `--hypr`, `./install.sh` only puts the binary in `~/.local/bin`. That directory must be on `PATH`. Bind `omapaste toggle` yourself.
+
+Python is used only by `install.sh --hypr` to edit `~/.config/hypr/*.lua`. The app is not Python.
+
+## Daily loop
 
 ```bash
 cargo test
-cargo test -- --ignored --test-threads=1   # GTK overlay smoke; needs a display
 cargo fmt
-./install.sh                               # release build → ~/.local/bin/omapaste
-systemctl --user restart omapaste.service  # pick up a new binary
-journalctl --user -u omapaste.service -n 30 --no-pager
+./install.sh
+omapaste quit && omapaste daemon     # load the new binary
+# Super+Shift+V — do not use Super+Ctrl+V
 ```
 
-Live check after UI work: Super+Shift+V. Do not use Super+Ctrl+V — that is Omarchy's built-in picker.
+GTK overlay smoke (needs a display, single-threaded):
 
-**Never** run `omapaste toggle` / `show` / `hide` from tests. Those commands attach to the live daemon (`io.github.pkayokay.omapaste`) and will move the real bar.
+```bash
+cargo test -- --ignored --test-threads=1
+```
 
-## Layout
+Do **not** run `omapaste toggle` / `show` / `hide` from tests. Those hit the live daemon and move the real bar.
+
+`install.sh` does not ship a systemd unit. If you started one yourself (`systemctl --user restart omapaste.service`), that works too; `omapaste quit && omapaste daemon` works everywhere.
+
+Debug the running daemon:
+
+```bash
+RUST_LOG=debug omapaste daemon
+# or, if you have a user unit:
+journalctl --user -u omapaste.service -n 50 --no-pager
+```
+
+Look for panics and `Theme parser error`. Invalid GTK CSS (for example `overflow`) shows up there, not as a compile error.
+
+## Where to change what
+
+| Task | Files |
+| --- | --- |
+| Bar layout, keys, search, cards | `src/ui.rs` |
+| Colors, radii, CSS | `src/theme.rs` |
+| History, keep time, search query, seed clips | `src/store.rs` |
+| Capture from clipboard, secret MIME skip | `src/clipboard.rs` |
+| Paste into the last app, Hyprland focus | `src/paste.rs` |
+| `config.toml` knobs | `src/config.rs` (`DEFAULT_CONFIG` + `load_config`) |
+| CLI flags / commands | `src/cli.rs`, `src/main.rs` |
+| XDG paths, `APP_ID`, issue URL | `src/paths.rs` |
+| D-Bus commands, prune timer, theme watch | `src/app.rs` |
+| Super+Shift+V, autostart, layer rule | `install.sh --hypr` (not `config.toml`) |
 
 | Path | Role |
 | --- | --- |
-| `src/main.rs` | CLI entry: `--version` / `--help` / `daemon\|toggle\|show\|hide\|quit` |
-| `src/cli.rs` | Arg parsing (unit-tested) |
-| `src/app.rs` | GTK `Application`, D-Bus commands, theme watch, prune timer |
-| `src/ui.rs` | Layer-shell overlay, cards, search, key handling |
-| `src/clipboard.rs` | `wl-paste` watchers, secret MIME skip, ingest into the store |
-| `src/store.rs` | SQLite history, keep times, search, seed clips |
-| `src/paste.rs` | Hyprland focus, `wl-copy`, `wtype` paste keys |
-| `src/theme.rs` | Omarchy `colors.toml` → GTK CSS |
-| `src/config.rs` | `~/.config/omapaste/config.toml` |
-| `src/paths.rs` | XDG paths, `APP_ID`, issue tracker URL |
-| `install.sh` | Release build + optional Hyprland bind / autostart |
-| `tests/cli.rs` | Process tests for `--version`, `-h`, unknown command |
+| `src/main.rs` | Entry: `--version` / `--help` / `daemon\|toggle\|show\|hide\|quit` |
+| `src/cli.rs` | Arg parsing |
+| `tests/cli.rs` | Process tests for those flags |
+| `share/` | Desktop file + SVG icon |
 
-Python appears only in `install.sh --hypr` (edits `~/.config/hypr/*.lua`). The app is not Python.
+## Runtime files
 
-## Invariants
+| Path | What |
+| --- | --- |
+| `~/.config/omapaste/config.toml` | Keep default, caps, paste keys, secret skip. Created on first launch. |
+| `~/.local/share/omapaste/history.sqlite` | Clip DB. Delete it to re-seed samples (text only). |
+| `~/.local/share/omapaste/images/` | PNG payloads as `{hash}.bin` |
+| `~/.local/state/omarchy/current/theme/` | `colors.toml` + `theme.name`. Do not edit `/usr/share/omarchy/`. |
+| `~/.config/hypr/bindings.lua` | Super+Shift+V |
+| `~/.config/hypr/autostart.lua` | `omapaste daemon` |
+| `~/.config/hypr/hyprland.lua` | `namespace = "omapaste"` layer rule |
 
-- **Square chrome.** Omarchy's live `decoration:rounding` is 0. Bar, cards, search, buttons, and popovers use `border-radius: 0`.
-- **Search must not shove the cards.** Header controls and the search entry are 28px tall. Opening search replaces History in-place.
-- **GTK CSS has no `overflow`.** That property is invalid here and logs a parser error. Clip children with `WidgetExt::set_overflow`.
-- **Keep Super+Ctrl+V for Omarchy.** Default bind is Super+Shift+V via `./install.sh --hypr`.
-- **One application id:** `io.github.pkayokay.omapaste`. GTK widget tests must use a different id and `ApplicationFlags::NON_UNIQUE`, and must `register` before creating windows.
-- **Do not present the overlay in tests.** Construct it, `refresh`, maybe open search. Never `show_rc` / `present` — that maps a layer-shell bar on the user's desktop.
-- **Env mutations need `crate::env_lock()`.** PATH, HOME, XDG_* tests share process env.
-- **Subprocess I/O is fakeable.** `paste.rs` takes a `Proc` in tests (`hyprctl` / `wtype` / `wl-copy`). Clipboard capture is `ingest(...)` plus PATH stubs for `wl-paste`. Prefer that over talking to the real clipboard.
-- **Seed only on a missing DB.** Sample clips are text-only; do not add images.
-- **Theme files** live at `~/.local/state/omarchy/current/theme` (`colors.toml`, `theme.name`). Do not edit `/usr/share/omarchy/`.
-- **Toggle key is a Hyprland bind**, not `config.toml`. There is no `toggle_key` setting.
+There is no `toggle_key` in `config.toml`. Change the Hyprland bind.
 
 ## Testing
 
-Default `cargo test` should stay headless and off the session bus.
+Default `cargo test` must stay headless and off the session bus.
 
-- Logic, store, config, theme, CLI parse, key intent, paste fakes: `src/*/tests`.
+- Store, config, theme, CLI parse, key intent, paste fakes: modules under `src/`.
 - Binary flags: `tests/cli.rs`.
-- GTK overlay smoke: `ui::tests::overlay_builds_and_opens_search`, `#[ignore]`, `--test-threads=1`.
-- Clip timestamps in store tests must be current (or `None`) if you expect `list()` to return them — keep-until is compared to wall-clock time.
+- GTK smoke: `ui::tests::overlay_builds_and_opens_search`, `#[ignore]`. Use a **different** application id and `ApplicationFlags::NON_UNIQUE`. `register` the app before creating windows. Construct, `refresh`, maybe open search. **Never** `show_rc` / `present`.
+- Env (PATH, HOME, XDG_*): take `crate::env_lock()` first.
+- Subprocess I/O: `paste.rs` `Proc` fake (`hyprctl` / `wtype` / `wl-copy`). Clipboard: `ingest(...)` plus a stub `wl-paste` on `PATH`. Do not require a real clipboard or Hyprland in unit tests.
+- Store `list()` hides clips whose `keep_until` is in the past. Use `now: None` or a current timestamp if you expect rows back.
 
-When adding behavior, add a test next to it. If it shells out, inject a fake or a stub binary; do not require Hyprland in unit tests.
+When you add behavior, add a test next to it.
 
-## UI changes
+## Building a feature
 
-1. Edit `src/theme.rs` / `src/ui.rs`.
-2. `./install.sh && systemctl --user restart omapaste.service`
-3. Super+Shift+V. Check search open/close (cards must stay put), selected card contrast, shortcuts popover, Esc layering.
-4. `journalctl --user -u omapaste.service` — no CSS parser errors, no panics.
+1. Pick the row in **Where to change what**.
+2. Extract I/O behind a function or `Proc` so it can be faked. See `key_intent`, `ingest`, `window_from_hypr_json`.
+3. Tests + `cargo test` (+ ignored GTK test if you touch overlay construction).
+4. `./install.sh && omapaste quit && omapaste daemon`.
+5. Super+Shift+V. For UI: search open/close (cards stay put), selected contrast, shortcuts popover, Esc (shortcuts → search → bar).
+
+v0.1 does **not** include pinboards, categories, drag-and-drop, or sync.
+
+## Fixing a bug
+
+1. Reproduce with Super+Shift+V (or the CLI). `RUST_LOG=debug`.
+2. If it is store/config/theme/paste/CLI, write a failing test first.
+3. Freeze / crash on click or arrows: check GTK CSS parser errors and anything that runs on the UI thread during select/copy.
+4. Bar does not appear: is the daemon running? `omapaste daemon`. Did `quit` kill it? Is `~/.local/bin` on `PATH`? Another process already owns `io.github.pkayokay.omapaste`?
+5. Paste goes to the wrong place: `paste_keys` in config; terminal detection in `paste.rs`; `wtype` installed.
+6. Theme not updating: files under `~/.local/state/omarchy/current/theme/`.
+7. History looks empty: expired clips are hidden; delete the sqlite file to re-seed.
+
+## Invariants
+
+- **Square chrome.** Omarchy rounding is 0. Bar, cards, search, buttons, popovers: `border-radius: 0`.
+- **Search is 28px.** Opening it replaces History in-place and must not push the card row down.
+- **GTK CSS has no `overflow`.** Invalid; logs a parser error. Clip children with `WidgetExt::set_overflow`.
+- **Keep Super+Ctrl+V for Omarchy.**
+- **Seed only when the DB file is missing.** Text samples only.
+- **Copying a card sets an ignore-hash** so `wl-paste` does not record that copy as a new clip.
 
 ## Style
 
 - Match neighboring Rust. Small functions, no speculative helpers.
-- Commit messages are one sentence, like the existing log (`Cover core behavior with unit tests.`).
+- Commit messages are one sentence (`Cover core behavior with unit tests.`).
 - Do not push unless asked.
-- v0.1 does not include pinboards, categories, drag-and-drop, or sync.
