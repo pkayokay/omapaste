@@ -69,9 +69,15 @@ class ClipCard(Gtk.Box):
         self.clip = clip
         self.add_css_class("op-card")
         self.set_size_request(CARD_WIDTH, CARD_HEIGHT)
+        self.set_hexpand(False)
+        self.set_vexpand(False)
+        self.set_halign(Gtk.Align.START)
+        self.set_valign(Gtk.Align.CENTER)
+        self.set_overflow(Gtk.Overflow.HIDDEN)
 
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.body.set_vexpand(True)
+        self.body.set_hexpand(False)
         body = self.body
         if clip.kind == "image" and clip.image_path:
             picture = _image_preview(clip.image_path)
@@ -89,6 +95,8 @@ class ClipCard(Gtk.Box):
             )
             label.add_css_class("op-preview")
             label.set_max_width_chars(28)
+            label.set_width_chars(28)
+            label.set_hexpand(False)
             label.set_vexpand(True)
             body.append(label)
         self.append(body)
@@ -150,8 +158,9 @@ def _image_preview(path: str) -> Gtk.Widget:
         picture = Gtk.Picture.new_for_paintable(texture)
         picture.set_content_fit(Gtk.ContentFit.COVER)
         picture.set_can_shrink(True)
-        picture.set_hexpand(True)
+        picture.set_hexpand(False)
         picture.set_vexpand(True)
+        picture.set_size_request(190, 120)
         return picture
     except Exception:
         label = Gtk.Label(label="Image", xalign=0, yalign=0)
@@ -234,7 +243,10 @@ class Overlay:
         self.scroller.set_hexpand(True)
         self.scroller.set_size_request(-1, CARD_HEIGHT + 8)
         self.card_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.card_box.set_halign(Gtk.Align.START)
         self.card_box.set_valign(Gtk.Align.CENTER)
+        self.card_box.set_hexpand(False)
+        self.card_box.set_homogeneous(False)
         self.scroller.set_child(self.card_box)
 
         self.empty = Gtk.Label(label="Copy something. It will show up here.")
@@ -292,7 +304,15 @@ class Overlay:
 
     def _apply_theme(self, theme: Theme) -> None:
         self.theme = theme
-        self._css.load_from_string(css_for(theme))
+        self._css.load_from_string(
+            css_for(theme)
+            + f"""
+.op-card {{
+  min-width: {CARD_WIDTH}px;
+  min-height: {CARD_HEIGHT}px;
+}}
+"""
+        )
         display = Gdk.Display.get_default()
         if display is not None:
             Gtk.StyleContext.add_provider_for_display(
