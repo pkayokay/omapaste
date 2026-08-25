@@ -137,6 +137,12 @@ window.omapaste {{
   color: {fg};
 }}
 
+.op-issues {{
+  font-size: 11px;
+  color: alpha({fg}, 0.70);
+  padding-top: 8px;
+}}
+
 .op-search {{
   background-color: {bg2};
   color: {fg};

@@ -878,6 +878,14 @@ fn shortcuts_popover() -> gtk::Popover {
         row.append(&action_label);
         box_.append(&row);
     }
+    let issues = gtk::Label::new(Some(
+        "Report issues: https://github.com/pkayokay/omapaste/issues",
+    ));
+    issues.set_xalign(0.0);
+    issues.set_wrap(true);
+    issues.set_selectable(true);
+    issues.add_css_class("op-issues");
+    box_.append(&issues);
     popover.set_child(Some(&box_));
     popover
 }

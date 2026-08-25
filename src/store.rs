@@ -17,6 +17,10 @@ pub const SEED_CLIPS: &[(&str, &str)] = &[
         "forever",
     ),
     ("https://omarchy.org", "7d"),
+    (
+        "https://github.com/pkayokay/omapaste/issues",
+        "forever",
+    ),
     ("omarchy theme list", "7d"),
     (
         "fn greet(name: &str) -> String {\n    format!(\"hello, {name}\")\n}",

@@ -6,7 +6,7 @@ Omapaste is a **Rust** GTK4 app. It sits in the background, remembers what you c
 
 This is v0.1. It is the bottom bar, clip history, per-clip keep time, select-to-copy, and Enter-to-paste. Pinboards, categories, and drag-and-drop are intentionally not in this release.
 
-MIT licensed. https://github.com/pkayokay/omapaste
+MIT licensed. Source and issue tracker: https://github.com/pkayokay/omapaste
 
 ## What it does
 
@@ -109,6 +109,12 @@ Not in v0.1, on purpose:
 - Drag a card into another app
 - Richer image and file clips
 - Sync
+
+## Issues
+
+Bugs, ideas, and patches: [github.com/pkayokay/omapaste/issues](https://github.com/pkayokay/omapaste/issues).
+
+The keyboard-shortcuts popover in the bar also shows that link. A first-run sample clip is the same URL so you can copy it.
 
 ## Development
 
