@@ -57,7 +57,8 @@ Without `--hypr`, install the binary only and bind it yourself.
 | Delete or Backspace | Remove the highlighted clip (Backspace edits search if it has text) |
 | Ctrl+K | Cycle keep time (1h → 1d → 7d → forever) |
 | Type or click the magnifying glass | Search (History stays in the header) |
-| Esc | Close search, then the bar |
+| Keyboard icon | Shortcut list |
+| Esc | Close shortcuts, then search, then the bar |
 
 ## Keep time
 

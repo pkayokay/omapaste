@@ -31,6 +31,16 @@ VISIBLE_MARGIN = 14
 SLIDE_PX = BAR_HEIGHT + 24
 ANIM_DURATION_MS = 220
 
+SHORTCUTS = (
+    ("← →", "Select"),
+    ("Enter", "Paste"),
+    ("Click", "Copy"),
+    ("Del", "Delete"),
+    ("Ctrl+K", "Keep"),
+    ("Type", "Search"),
+    ("Esc", "Close"),
+)
+
 
 def _output_width() -> int:
     display = Gdk.Display.get_default()
@@ -151,6 +161,25 @@ class ClipCard(Gtk.Box):
             self.remove_css_class("selected")
 
 
+def _shortcuts_popover() -> Gtk.Popover:
+    popover = Gtk.Popover()
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+    box.add_css_class("op-shortcuts")
+    for key, action in SHORTCUTS:
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
+        key_label = Gtk.Label(label=key, xalign=0)
+        key_label.add_css_class("op-shortcut-key")
+        key_label.set_width_chars(8)
+        action_label = Gtk.Label(label=action, xalign=0)
+        action_label.add_css_class("op-shortcut-action")
+        action_label.set_hexpand(True)
+        row.append(key_label)
+        row.append(action_label)
+        box.append(row)
+    popover.set_child(box)
+    return popover
+
+
 def _image_preview(path: str) -> Gtk.Widget:
     try:
         pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 190, 140, True)
@@ -255,17 +284,18 @@ class Overlay:
         self.search.connect("changed", self._on_search)
         self.search.connect("icon-press", self._on_search_icon)
 
-        self.hint = Gtk.Label(
-            label="← → select   Enter paste   click copy   Del delete   Ctrl+K keep   Esc close",
-            xalign=1,
-        )
-        self.hint.add_css_class("op-hint")
-        self.hint.set_ellipsize(Pango.EllipsizeMode.END)
-        self.hint.set_halign(Gtk.Align.END)
+        self.shortcuts_btn = Gtk.Button()
+        self.shortcuts_btn.set_has_frame(False)
+        self.shortcuts_btn.set_icon_name("input-keyboard-symbolic")
+        self.shortcuts_btn.set_tooltip_text("Shortcuts")
+        self.shortcuts_btn.add_css_class("op-icon-btn")
+        self.shortcuts = _shortcuts_popover()
+        self.shortcuts.set_parent(self.shortcuts_btn)
+        self.shortcuts_btn.connect("clicked", lambda *_: self.shortcuts.popup())
         header.append(self.brand)
         header.append(self.search)
         header.append(self.search_open_btn)
-        header.append(self.hint)
+        header.append(self.shortcuts_btn)
         self._search_open = False
         self._sync_search_chrome()
 
@@ -374,6 +404,7 @@ class Overlay:
         if not self._visible and not self.window.get_mapped():
             return
         self._visible = False
+        self.shortcuts.popdown()
         if self.layer_shell:
             LayerShell.set_keyboard_mode(self.window, LayerShell.KeyboardMode.NONE)
             self._animate_slide(1.0, on_done=self._after_hide)
@@ -605,6 +636,9 @@ class Overlay:
         ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
 
         if keyval == Gdk.KEY_Escape:
+            if self.shortcuts.get_visible():
+                self.shortcuts.popdown()
+                return True
             if self._is_searching():
                 self._close_search()
                 return True

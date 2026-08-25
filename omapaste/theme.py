@@ -113,6 +113,22 @@ window.omapaste {{
   font-size: 11px;
 }}
 
+.op-shortcuts {{
+  padding: 10px 14px;
+  min-width: 200px;
+}}
+
+.op-shortcut-key {{
+  font-family: "JetBrainsMono Nerd Font", "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: alpha({fg}, 0.70);
+}}
+
+.op-shortcut-action {{
+  font-size: 12px;
+  color: {fg};
+}}
+
 .op-search {{
   background-color: {bg2};
   color: {fg};
