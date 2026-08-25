@@ -52,6 +52,7 @@ import time
 home = Path.home()
 bindings = home / ".config/hypr/bindings.lua"
 autostart = home / ".config/hypr/autostart.lua"
+hyprland = home / ".config/hypr/hyprland.lua"
 stamp = str(int(time.time()))
 
 auto_mark = 'o.launch_on_start("omapaste daemon")'
@@ -90,6 +91,19 @@ if autostart.exists() and auto_mark not in autostart.read_text():
     print(f"Updated {autostart} (backup {backup.name})")
 elif autostart.exists():
     print(f"{autostart} already launches omapaste")
+
+layer_mark = 'namespace = "omapaste"'
+layer_block = """
+-- Omapaste slides itself; skip Hyprland's default layer fade.
+hl.layer_rule({ match = { namespace = "omapaste" }, no_anim = true, animation = "none" })
+""".strip()
+if hyprland.exists() and layer_mark not in hyprland.read_text():
+    backup = hyprland.with_suffix(hyprland.suffix + f".bak.{stamp}")
+    backup.write_text(hyprland.read_text())
+    hyprland.write_text(hyprland.read_text().rstrip() + "\n\n" + layer_block + "\n")
+    print(f"Updated {hyprland} (backup {backup.name})")
+elif hyprland.exists():
+    print(f"{hyprland} already has an omapaste layer rule")
 PY
 fi
 

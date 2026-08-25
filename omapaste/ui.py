@@ -27,6 +27,9 @@ log = logging.getLogger("omapaste")
 BAR_HEIGHT = 268
 CARD_WIDTH = 210
 CARD_HEIGHT = 176
+VISIBLE_MARGIN = 14
+SLIDE_PX = BAR_HEIGHT + 24
+ANIM_DURATION_MS = 220
 
 
 def _output_width() -> int:
@@ -165,15 +168,19 @@ class Overlay:
         self.cards: list[ClipCard] = []
         self._css = Gtk.CssProvider()
         self._visible = False
+        self._anim_id = 0
+        self._slide = 1.0
 
         self.window = Gtk.Window(application=application, title="omapaste")
         self.window.set_decorated(False)
         self.window.set_resizable(False)
         self.window.add_css_class("omapaste")
+        self.window.set_overflow(Gtk.Overflow.HIDDEN)
         self.window.connect("close-request", self._on_close)
 
         width = _output_width()
         self.window.set_default_size(width, BAR_HEIGHT)
+        self.window.set_size_request(width, BAR_HEIGHT)
 
         self.layer_shell = bool(LAYER_SHELL and LayerShell and LayerShell.is_supported())
         if self.layer_shell:
@@ -187,7 +194,7 @@ class Overlay:
             LayerShell.set_exclusive_zone(self.window, 0)
             LayerShell.set_margin(self.window, LayerShell.Edge.LEFT, 18)
             LayerShell.set_margin(self.window, LayerShell.Edge.RIGHT, 18)
-            LayerShell.set_margin(self.window, LayerShell.Edge.BOTTOM, 14)
+            LayerShell.set_margin(self.window, LayerShell.Edge.BOTTOM, VISIBLE_MARGIN)
             LayerShell.set_keyboard_mode(self.window, LayerShell.KeyboardMode.NONE)
 
         self._apply_theme(self.theme)
@@ -196,7 +203,6 @@ class Overlay:
         self.bar.add_css_class("op-bar")
         self.bar.set_hexpand(True)
         self.bar.set_halign(Gtk.Align.FILL)
-        self.bar.set_size_request(width, BAR_HEIGHT)
 
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         header.add_css_class("op-header")
@@ -241,7 +247,23 @@ class Overlay:
         self.bar.append(header)
         self.bar.append(self.stack)
         self.bar.append(footer)
-        self.window.set_child(self.bar)
+        self.bar.set_size_request(width, BAR_HEIGHT)
+        self.bar.set_valign(Gtk.Align.START)
+        self.bar.set_vexpand(False)
+        self.bar.set_margin_top(SLIDE_PX)
+
+        # Keep the layer-shell surface parked on-screen and slide the bar
+        # inside it. Animating zwlr margins reconfigures Hyprland every frame
+        # and can exclusive-grab the keyboard while the bar is still off-screen.
+        stage = Gtk.Box()
+        stage.set_size_request(width, BAR_HEIGHT)
+        self.clipper = Gtk.Overlay()
+        self.clipper.set_overflow(Gtk.Overflow.HIDDEN)
+        self.clipper.set_hexpand(True)
+        self.clipper.set_size_request(width, BAR_HEIGHT)
+        self.clipper.set_child(stage)
+        self.clipper.add_overlay(self.bar)
+        self.window.set_child(self.clipper)
 
         keys = Gtk.EventControllerKey()
         keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
@@ -284,18 +306,64 @@ class Overlay:
         self.search.set_text("")
         self.selected_index = 0
         self.refresh()
+        mapped = self.window.get_mapped()
+        self._visible = True
         if self.layer_shell:
             LayerShell.set_keyboard_mode(self.window, LayerShell.KeyboardMode.EXCLUSIVE)
+        if not mapped:
+            self._set_slide(1.0)
         self.window.set_visible(True)
         self.window.present()
-        self._visible = True
+        self._animate_slide(0.0)
         GLib.idle_add(self.window.grab_focus)
 
     def hide(self) -> None:
+        if not self._visible and not self.window.get_mapped():
+            return
+        self._visible = False
         if self.layer_shell:
             LayerShell.set_keyboard_mode(self.window, LayerShell.KeyboardMode.NONE)
-        self.window.set_visible(False)
-        self._visible = False
+            self._animate_slide(1.0, on_done=self._after_hide)
+        else:
+            self.window.set_visible(False)
+
+    def _after_hide(self) -> None:
+        if not self._visible:
+            self.window.set_visible(False)
+
+    def _set_slide(self, hidden: float) -> None:
+        self._slide = max(0.0, min(1.0, hidden))
+        self.bar.set_margin_top(int(round(SLIDE_PX * self._slide)))
+
+    def _stop_animation(self) -> None:
+        if self._anim_id:
+            GLib.source_remove(self._anim_id)
+            self._anim_id = 0
+
+    def _animate_slide(self, target: float, on_done: Callable[[], None] | None = None) -> None:
+        self._stop_animation()
+        start = self._slide
+        distance = abs(target - start)
+        if distance < 0.01:
+            self._set_slide(target)
+            if on_done:
+                on_done()
+            return
+        duration = max(0.08, ANIM_DURATION_MS / 1000.0 * distance)
+        started = time.monotonic()
+
+        def tick() -> bool:
+            t = min(1.0, (time.monotonic() - started) / duration)
+            eased = 1.0 - (1.0 - t) ** 5
+            self._set_slide(start + (target - start) * eased)
+            if t >= 1.0:
+                self._anim_id = 0
+                if on_done:
+                    on_done()
+                return False
+            return True
+
+        self._anim_id = GLib.timeout_add(8, tick)
 
     def refresh(self, keep_selection: bool = False) -> None:
         selected_id = None
