@@ -121,6 +121,7 @@ The bar’s help icon (next to shortcuts) opens that page. The shortcuts popover
 
 ```bash
 cargo test
+cargo test -- --ignored --test-threads=1   # GTK overlay smoke; needs a display
 cargo build --release
 ./install.sh          # install the binary only
 ./install.sh --hypr   # also bind Super+Shift+V and autostart

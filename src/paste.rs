@@ -1,6 +1,6 @@
 use std::io::Read;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -39,11 +39,29 @@ struct HyprWindow {
     tags: Option<Vec<String>>,
 }
 
-fn run(
-    argv: &[&str],
-    input: Option<&[u8]>,
-    timeout: Option<Duration>,
-) -> std::io::Result<std::process::Output> {
+trait Proc {
+    fn run(
+        &self,
+        argv: &[&str],
+        input: Option<&[u8]>,
+        timeout: Option<Duration>,
+    ) -> std::io::Result<Output>;
+}
+
+struct RealProc;
+
+impl Proc for RealProc {
+    fn run(
+        &self,
+        argv: &[&str],
+        input: Option<&[u8]>,
+        timeout: Option<Duration>,
+    ) -> std::io::Result<Output> {
+        run(argv, input, timeout)
+    }
+}
+
+fn run(argv: &[&str], input: Option<&[u8]>, timeout: Option<Duration>) -> std::io::Result<Output> {
     let mut cmd = Command::new(argv[0]);
     cmd.args(&argv[1..])
         .stdout(Stdio::piped())
@@ -87,7 +105,13 @@ fn run(
 }
 
 pub fn current_window() -> Option<TargetWindow> {
-    let out = run(&["hyprctl", "activewindow", "-j"], None, None).ok()?;
+    current_window_with(&RealProc)
+}
+
+fn current_window_with(proc: &impl Proc) -> Option<TargetWindow> {
+    let out = proc
+        .run(&["hyprctl", "activewindow", "-j"], None, None)
+        .ok()?;
     if !out.status.success() {
         return None;
     }
@@ -109,28 +133,40 @@ fn window_from_hypr_json(stdout: &[u8]) -> Option<TargetWindow> {
 }
 
 pub fn focus_window(target: &TargetWindow) {
+    focus_window_with(&RealProc, target);
+}
+
+fn focus_window_with(proc: &impl Proc, target: &TargetWindow) {
     let lua = format!(
         "hl.dispatch(hl.dsp.focus({{ window = \"address:{}\" }}))",
         target.address
     );
-    let _ = run(&["hyprctl", "eval", &lua], None, None);
+    let _ = proc.run(&["hyprctl", "eval", &lua], None, None);
 }
 
 pub fn copy_text(text: &str) {
-    if gdk_copy_text(text) {
+    copy_text_with(&RealProc, text, true);
+}
+
+fn copy_text_with(proc: &impl Proc, text: &str, try_gdk: bool) {
+    if try_gdk && gdk_copy_text(text) {
         return;
     }
-    wl_copy(&["wl-copy"], text.as_bytes());
+    wl_copy_with(proc, &["wl-copy"], text.as_bytes());
 }
 
 pub fn copy_image(path: &Path, mime: &str) {
+    copy_image_with(&RealProc, path, mime, true);
+}
+
+fn copy_image_with(proc: &impl Proc, path: &Path, mime: &str, try_gdk: bool) {
     let Ok(data) = std::fs::read(path) else {
         return;
     };
-    if gdk_copy_bytes(&data, mime) {
+    if try_gdk && gdk_copy_bytes(&data, mime) {
         return;
     }
-    wl_copy(&["wl-copy", "--type", mime], &data);
+    wl_copy_with(proc, &["wl-copy", "--type", mime], &data);
 }
 
 fn gdk_copy_text(text: &str) -> bool {
@@ -150,8 +186,8 @@ fn gdk_copy_bytes(payload: &[u8], mime: &str) -> bool {
     display.clipboard().set_content(Some(&provider)).is_ok()
 }
 
-fn wl_copy(argv: &[&str], payload: &[u8]) {
-    match run(argv, Some(payload), Some(Duration::from_secs(1))) {
+fn wl_copy_with(proc: &impl Proc, argv: &[&str], payload: &[u8]) {
+    match proc.run(argv, Some(payload), Some(Duration::from_secs(1))) {
         Ok(out) if !out.status.success() => {
             log::warn!("wl-copy failed: {}", String::from_utf8_lossy(&out.stderr));
         }
@@ -165,13 +201,17 @@ pub fn uses_shift_insert(paste_keys: &str, terminal: bool) -> bool {
 }
 
 pub fn send_paste(target: Option<&TargetWindow>, paste_keys: &str) {
+    send_paste_with(&RealProc, target, paste_keys);
+}
+
+fn send_paste_with(proc: &impl Proc, target: Option<&TargetWindow>, paste_keys: &str) {
     let use_shift = uses_shift_insert(paste_keys, target.map(|t| t.is_terminal()).unwrap_or(false));
     let argv: &[&str] = if use_shift {
         &["wtype", "-M", "shift", "-k", "Insert", "-m", "shift"]
     } else {
         &["wtype", "-M", "ctrl", "-k", "v", "-m", "ctrl"]
     };
-    if let Ok(out) = run(argv, None, None) {
+    if let Ok(out) = proc.run(argv, None, None) {
         if !out.status.success() {
             log::warn!(
                 "wtype paste failed: {}",
@@ -182,11 +222,22 @@ pub fn send_paste(target: Option<&TargetWindow>, paste_keys: &str) {
 }
 
 pub fn paste_now(target: Option<&TargetWindow>, paste_keys: &str) {
+    paste_now_with(&RealProc, target, paste_keys, Duration::from_millis(150));
+}
+
+fn paste_now_with(
+    proc: &impl Proc,
+    target: Option<&TargetWindow>,
+    paste_keys: &str,
+    delay: Duration,
+) {
     if let Some(t) = target {
-        focus_window(t);
+        focus_window_with(proc, t);
     }
-    thread::sleep(Duration::from_millis(150));
-    send_paste(target, paste_keys);
+    if !delay.is_zero() {
+        thread::sleep(delay);
+    }
+    send_paste_with(proc, target, paste_keys);
 }
 
 #[cfg(test)]
@@ -259,5 +310,121 @@ mod tests {
         assert!(window_from_hypr_json(b"not-json").is_none());
         assert!(window_from_hypr_json(br#"{"address":"","class":"kitty"}"#).is_none());
         assert!(window_from_hypr_json(br#"{"class":"kitty"}"#).is_none());
+    }
+
+    struct FakeProc {
+        calls: std::sync::Mutex<Vec<Vec<String>>>,
+        inputs: std::sync::Mutex<Vec<Option<Vec<u8>>>>,
+        stdout: Vec<u8>,
+        ok: bool,
+    }
+
+    impl FakeProc {
+        fn ok(stdout: &[u8]) -> Self {
+            Self {
+                calls: std::sync::Mutex::new(Vec::new()),
+                inputs: std::sync::Mutex::new(Vec::new()),
+                stdout: stdout.to_vec(),
+                ok: true,
+            }
+        }
+
+        fn fail() -> Self {
+            Self {
+                calls: std::sync::Mutex::new(Vec::new()),
+                inputs: std::sync::Mutex::new(Vec::new()),
+                stdout: Vec::new(),
+                ok: false,
+            }
+        }
+
+        fn last(&self) -> Vec<String> {
+            self.calls.lock().unwrap().last().cloned().unwrap()
+        }
+    }
+
+    impl Proc for FakeProc {
+        fn run(
+            &self,
+            argv: &[&str],
+            input: Option<&[u8]>,
+            _timeout: Option<Duration>,
+        ) -> std::io::Result<Output> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(argv.iter().map(|s| (*s).to_string()).collect());
+            self.inputs.lock().unwrap().push(input.map(|b| b.to_vec()));
+            use std::os::unix::process::ExitStatusExt;
+            Ok(Output {
+                status: std::process::ExitStatus::from_raw(if self.ok { 0 } else { 0x100 }),
+                stdout: self.stdout.clone(),
+                stderr: Vec::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn current_window_uses_hyprctl_json() {
+        let proc = FakeProc::ok(br#"{"address":"0xabc","class":"firefox","title":"x","tags":[]}"#);
+        let win = current_window_with(&proc).unwrap();
+        assert_eq!(win.address, "0xabc");
+        assert_eq!(proc.last()[0], "hyprctl");
+        assert!(current_window_with(&FakeProc::fail()).is_none());
+    }
+
+    #[test]
+    fn send_paste_picks_wtype_keys() {
+        let term = window("kitty", &[]);
+        let proc = FakeProc::ok(b"");
+        send_paste_with(&proc, Some(&term), "auto");
+        assert_eq!(
+            proc.last(),
+            ["wtype", "-M", "shift", "-k", "Insert", "-m", "shift"]
+        );
+
+        let proc = FakeProc::ok(b"");
+        send_paste_with(&proc, Some(&window("firefox", &[])), "auto");
+        assert_eq!(
+            proc.last(),
+            ["wtype", "-M", "ctrl", "-k", "v", "-m", "ctrl"]
+        );
+    }
+
+    #[test]
+    fn paste_now_focuses_then_types_without_sleep() {
+        let target = window("firefox", &[]);
+        let proc = FakeProc::ok(b"");
+        paste_now_with(&proc, Some(&target), "ctrl-v", Duration::ZERO);
+        let calls = proc.calls.lock().unwrap().clone();
+        assert_eq!(calls[0][0], "hyprctl");
+        assert!(calls[0][2].contains("0x1"));
+        assert_eq!(calls[1][0], "wtype");
+    }
+
+    #[test]
+    fn copy_falls_back_to_wl_copy() {
+        let proc = FakeProc::ok(b"");
+        copy_text_with(&proc, "hello", false);
+        assert_eq!(proc.last(), ["wl-copy"]);
+        assert_eq!(
+            proc.inputs.lock().unwrap().last().cloned().flatten(),
+            Some(b"hello".to_vec())
+        );
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("clip.png");
+        std::fs::write(&path, b"png").unwrap();
+        let proc = FakeProc::ok(b"");
+        copy_image_with(&proc, &path, "image/png", false);
+        assert_eq!(proc.last(), ["wl-copy", "--type", "image/png"]);
+        assert_eq!(
+            proc.inputs.lock().unwrap().last().cloned().flatten(),
+            Some(b"png".to_vec())
+        );
+
+        let proc = FakeProc::ok(b"");
+        copy_image_with(&proc, &dir.path().join("missing.png"), "image/png", false);
+        assert!(proc.calls.lock().unwrap().is_empty());
     }
 }

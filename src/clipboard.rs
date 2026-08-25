@@ -459,4 +459,26 @@ mod tests {
         .unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"stale");
     }
+
+    #[test]
+    fn wl_paste_stub_on_path() {
+        let _lock = crate::env_lock();
+        let dir = tempfile::TempDir::new().unwrap();
+        let bin = dir.path().join("wl-paste");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\ncase \"$1\" in\n--list-types) printf 'text/plain\\nimage/png\\n' ;;\n*) printf 'hello' ;;\nesac\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let old = std::env::var("PATH").unwrap_or_default();
+        std::env::set_var("PATH", format!("{}:{old}", dir.path().display()));
+        assert_eq!(
+            list_types(),
+            vec!["text/plain".to_string(), "image/png".to_string()]
+        );
+        assert_eq!(paste_bytes(&["wl-paste", "--type", "text"]), b"hello");
+        std::env::set_var("PATH", old);
+    }
 }

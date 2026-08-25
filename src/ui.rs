@@ -987,6 +987,21 @@ fn shortcuts_popover() -> gtk::Popover {
 }
 
 #[cfg(test)]
+impl Overlay {
+    fn test_clip_len(&self) -> usize {
+        self.state.borrow().clips.len()
+    }
+
+    fn test_open_search(&self) {
+        self.open_search("");
+    }
+
+    fn test_searching(&self) -> bool {
+        self.is_searching()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1106,5 +1121,40 @@ mod tests {
         assert_eq!(select_after_delete(4, 5), 3);
         assert_eq!(select_after_delete(2, 5), 2);
         assert_eq!(select_after_delete(0, 0), 0);
+    }
+
+    #[test]
+    #[ignore = "needs a display; run with cargo test -- --ignored --test-threads=1"]
+    fn overlay_builds_and_opens_search() {
+        if gtk::init().is_err() {
+            return;
+        }
+        let app = Application::builder()
+            .application_id("io.github.pkayokay.omapaste.tests")
+            .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(gtk::gio::Cancellable::NONE).unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = Rc::new(Store::open(&dir.path().join("db")).unwrap());
+        store
+            .add(
+                "text",
+                "text/plain",
+                b"hello",
+                Some("hello"),
+                "hello",
+                None,
+                "1d",
+                50,
+                None,
+            )
+            .unwrap();
+        let overlay = Overlay::new(&app, store, Config::default(), Rc::new(|_| {}));
+        overlay.refresh(false);
+        assert_eq!(overlay.test_clip_len(), 1);
+        assert!(!overlay.test_searching());
+        overlay.test_open_search();
+        assert!(overlay.test_searching());
+        assert!(!overlay.is_open());
     }
 }
