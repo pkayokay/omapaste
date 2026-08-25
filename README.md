@@ -20,6 +20,7 @@ MIT licensed. https://github.com/pkayokay/omapaste
 - Each clip has a keep time: 1 hour, 1 day, 7 days, or forever (`Ctrl+K` cycles it)
 - Follows the current Omarchy theme from `colors.toml`
 - Skips password-manager / secret MIME types
+- First launch seeds a few sample text clips (no images) so the bar is not empty
 
 ## Requirements
 

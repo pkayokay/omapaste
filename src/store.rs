@@ -6,6 +6,25 @@ use sha2::{Digest, Sha256};
 
 pub const DEFAULT_KEEP: &str = "1d";
 
+/// Text-only samples for a brand-new history database.
+pub const SEED_CLIPS: &[(&str, &str)] = &[
+    (
+        "← → select a clip. Enter pastes it into the last app. Esc closes the bar.",
+        "forever",
+    ),
+    (
+        "Type to search, or click the magnifying glass. Ctrl+K cycles how long a clip is kept.",
+        "forever",
+    ),
+    ("https://omarchy.org", "7d"),
+    ("omarchy theme list", "7d"),
+    (
+        "fn greet(name: &str) -> String {\n    format!(\"hello, {name}\")\n}",
+        "7d",
+    ),
+    ("ssh -o StrictHostKeyChecking=accept-new git@github.com", "7d"),
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KeepPreset {
     pub key: &'static str,
@@ -356,6 +375,24 @@ impl Store {
         self.conn
             .query_row("SELECT COUNT(*) FROM clips", [], |r| r.get(0))
     }
+
+    pub fn seed(&self) -> rusqlite::Result<()> {
+        let now = now_secs();
+        for (i, &(text, keep)) in SEED_CLIPS.iter().enumerate() {
+            self.add(
+                "text",
+                "text/plain",
+                text.as_bytes(),
+                Some(text),
+                &make_preview(text, 280),
+                None,
+                keep,
+                200,
+                Some(now - i as i64),
+            )?;
+        }
+        Ok(())
+    }
 }
 
 fn row_clip(row: &rusqlite::Row) -> rusqlite::Result<Clip> {
@@ -514,5 +551,21 @@ mod tests {
     #[test]
     fn now_is_sane() {
         let _ = SystemTime::now().duration_since(UNIX_EPOCH);
+    }
+
+    #[test]
+    fn seed_inserts_text_samples() {
+        let (_d, store) = tmp_store();
+        assert_eq!(store.count().unwrap(), 0);
+        store.seed().unwrap();
+        let clips = store.list("", None).unwrap();
+        assert_eq!(clips.len(), SEED_CLIPS.len());
+        assert!(clips.iter().all(|c| c.kind == "text"));
+        assert_eq!(clips[0].text.as_deref(), Some(SEED_CLIPS[0].0));
+        assert!(
+            clips
+                .iter()
+                .any(|c| c.text.as_deref() == Some("https://omarchy.org"))
+        );
     }
 }

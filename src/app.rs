@@ -34,13 +34,20 @@ pub fn run(startup_command: &str) -> glib::ExitCode {
         move |app| {
             let hold = app.hold();
             let config = load_config(None);
-            let store = match Store::open(&db_path()) {
+            let db = db_path();
+            let fresh = !db.exists();
+            let store = match Store::open(&db) {
                 Ok(s) => Rc::new(s),
                 Err(err) => {
                     log::error!("failed to open history: {err}");
                     return;
                 }
             };
+            if fresh {
+                if let Err(err) = store.seed() {
+                    log::warn!("failed to seed sample clips: {err}");
+                }
+            }
             if let Ok(removed) = store.prune(config.max_items, None) {
                 unlink(&removed);
             }
