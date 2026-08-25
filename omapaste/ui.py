@@ -115,6 +115,16 @@ class ClipCard(Gtk.Box):
             self.remove_css_class("selected")
 
 
+def _apply_keep(
+    popover: Gtk.Popover,
+    on_keep: Callable[[Clip, str], None],
+    clip: Clip,
+    key: str,
+) -> None:
+    popover.popdown()
+    on_keep(clip, key)
+
+
 def _keep_popover(clip: Clip, on_keep: Callable[[Clip, str], None]) -> Gtk.Popover:
     popover = Gtk.Popover()
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -126,7 +136,7 @@ def _keep_popover(clip: Clip, on_keep: Callable[[Clip, str], None]) -> Gtk.Popov
             button.add_css_class("suggested-action")
         button.connect(
             "clicked",
-            lambda _b, key=preset.key: (on_keep(clip, key), popover.popdown()),
+            lambda _b, key=preset.key: _apply_keep(popover, on_keep, clip, key),
         )
         box.append(button)
     popover.set_child(box)
@@ -401,16 +411,16 @@ class Overlay:
         if clip.kind == "image" and clip.image_path:
             path = Path(clip.image_path)
             if path.exists():
-                copy_image(path, clip.mime)
                 payload = path.read_bytes()
                 digest = content_hash("image", clip.mime, payload)
                 if self.on_copy:
                     self.on_copy(digest)
+                copy_image(path, clip.mime)
         elif clip.text is not None:
-            copy_text(clip.text)
             digest = content_hash("text", "text/plain", clip.text.encode())
             if self.on_copy:
                 self.on_copy(digest)
+            copy_text(clip.text)
         self.store.touch(clip.id)
 
     def paste_selected(self) -> None:
@@ -440,7 +450,11 @@ class Overlay:
 
     def set_keep(self, clip: Clip, preset: str) -> None:
         self.store.set_keep(clip.id, preset)
+        GLib.idle_add(self._refresh_keep)
+
+    def _refresh_keep(self) -> bool:
         self.refresh(keep_selection=True)
+        return False
 
     def cycle_keep(self) -> None:
         clip = self.selected()

@@ -70,6 +70,13 @@ class StoreTests(unittest.TestCase):
         hits = self.store.list("omarchy", now=3)
         self.assertEqual([c.text for c in hits], ["https://omarchy.org"])
 
+    def test_search_does_not_match_kind(self) -> None:
+        self._add("one", now=1)
+        self._add("two", now=2)
+        hits = self.store.list("t", now=3)
+        self.assertEqual([c.text for c in hits], ["two"])
+        self.assertEqual(self.store.list("text", now=3), [])
+
     def test_hash_stable(self) -> None:
         self.assertEqual(
             content_hash("text", "text/plain", b"abc"),

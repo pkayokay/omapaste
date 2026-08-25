@@ -40,6 +40,7 @@ class ClipboardWatcher:
         self._procs: list[subprocess.Popen[bytes]] = []
         self._ignore_hash: str | None = None
         self._ignore_until: int = 0
+        self._ignore_all_until: int = 0
         self._stopping = False
 
     def start(self) -> None:
@@ -57,8 +58,13 @@ class ClipboardWatcher:
         self._procs.clear()
 
     def ignore_hash(self, digest: str, seconds: float = 1.5) -> None:
+        now = GLib.get_monotonic_time()
+        hold = int(seconds * 1_000_000)
         self._ignore_hash = digest
-        self._ignore_until = GLib.get_monotonic_time() + int(seconds * 1_000_000)
+        self._ignore_until = now + hold
+        # Skip the following capture entirely. Reading via wl-paste on the
+        # GTK main thread deadlocks once this process owns the clipboard.
+        self._ignore_all_until = now + hold
 
     def _watch(self, label: str, argv: list[str]) -> None:
         try:
@@ -90,6 +96,8 @@ class ClipboardWatcher:
 
     def _capture_on_main(self, label: str) -> bool:
         if self._stopping:
+            return False
+        if GLib.get_monotonic_time() < self._ignore_all_until:
             return False
         try:
             clip = self._capture(label)

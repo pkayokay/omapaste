@@ -201,7 +201,6 @@ class Store:
             for clip in clips
             if needle in (clip.preview or "").casefold()
             or needle in (clip.text or "").casefold()
-            or needle in clip.kind.casefold()
         ]
 
     def delete(self, clip_id: int) -> Path | None:
