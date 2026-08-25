@@ -14,7 +14,7 @@ for arg in "$@"; do
     --hypr) HYPR=1 ;;
     --help|-h)
       echo "Usage: ./install.sh [--hypr]"
-      echo "  --hypr   also bind Super+Ctrl+V and autostart the daemon"
+      echo "  --hypr   also bind Super+Shift+V and autostart the daemon"
       exit 0
       ;;
     *)
@@ -54,23 +54,34 @@ bindings = home / ".config/hypr/bindings.lua"
 autostart = home / ".config/hypr/autostart.lua"
 stamp = str(int(time.time()))
 
-bind_mark = "omapaste toggle"
 auto_mark = 'o.launch_on_start("omapaste daemon")'
-bind_block = """
+new_bind = 'o.bind("SUPER + SHIFT + V", "Omapaste", "omapaste toggle")'
+old_block = """
 -- Omapaste clipboard history (https://github.com/pkayokay/omapaste)
 hl.unbind("SUPER + CTRL + V")
 o.bind("SUPER + CTRL + V", "Omapaste", "omapaste toggle")
-"""
+""".strip()
+new_block = """
+-- Omapaste clipboard history (https://github.com/pkayokay/omapaste)
+o.bind("SUPER + SHIFT + V", "Omapaste", "omapaste toggle")
+""".strip()
 auto_line = 'o.launch_on_start("omapaste daemon")\n'
 
-if bindings.exists() and bind_mark not in bindings.read_text():
-    backup = bindings.with_suffix(bindings.suffix + f".bak.{stamp}")
-    backup.write_text(bindings.read_text())
-    bindings.write_text(bindings.read_text().rstrip() + "\n" + bind_block)
-    print(f"Updated {bindings} (backup {backup.name})")
-    print("Note: SUPER+CTRL+V was previously bound to Omarchy clipboard manager. An unbind was added so Omapaste can use it.")
-elif bindings.exists():
-    print(f"{bindings} already has an omapaste bind")
+if bindings.exists():
+    text = bindings.read_text()
+    if new_bind in text:
+        print(f"{bindings} already has an omapaste bind")
+    else:
+        backup = bindings.with_suffix(bindings.suffix + f".bak.{stamp}")
+        backup.write_text(text)
+        if old_block in text:
+            bindings.write_text(text.replace(old_block, new_block, 1))
+            print(f"Updated {bindings} (backup {backup.name})")
+            print("Migrated Omapaste from SUPER+CTRL+V to SUPER+SHIFT+V. Omarchy clipboard keeps SUPER+CTRL+V.")
+        else:
+            bindings.write_text(text.rstrip() + "\n\n" + new_block + "\n")
+            print(f"Updated {bindings} (backup {backup.name})")
+            print("Bound SUPER+SHIFT+V to omapaste toggle.")
 
 if autostart.exists() and auto_mark not in autostart.read_text():
     backup = autostart.with_suffix(autostart.suffix + f".bak.{stamp}")

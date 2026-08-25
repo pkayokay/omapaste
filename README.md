@@ -39,9 +39,9 @@ cd omapaste
 omapaste daemon
 ```
 
-`./install.sh --hypr` copies the app to `~/.local/share/omapaste`, puts `omapaste` on `~/.local/bin`, autostarts the daemon, and binds **Super+Ctrl+V**.
+`./install.sh --hypr` copies the app to `~/.local/share/omapaste`, puts `omapaste` on `~/.local/bin`, autostarts the daemon, and binds **Super+Shift+V**.
 
-That key is Omarchy's built-in clipboard history. The installer unbinds it first so Omapaste can use it.
+That key is free in Omarchy. Super+Ctrl+V stays on the built-in clipboard picker.
 
 Without `--hypr`, install the binary only and bind it yourself.
 
@@ -49,7 +49,7 @@ Without `--hypr`, install the binary only and bind it yourself.
 
 | Input | Action |
 | --- | --- |
-| Super+Ctrl+V | Toggle the bar |
+| Super+Shift+V | Toggle the bar |
 | ← → | Select a clip (also copies it) |
 | Click a card | Select and copy |
 | Enter or double-click | Paste into the previous window and close |
