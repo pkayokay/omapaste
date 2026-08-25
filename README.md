@@ -54,7 +54,7 @@ Without `--hypr`, install the binary only and bind it yourself.
 | Click a card | Select and copy |
 | Enter or double-click | Paste into the previous window and close |
 | Ctrl+1–9 | Paste that card |
-| Delete | Remove the selected clip |
+| Delete or Backspace | Remove the highlighted clip (Backspace edits search if it has text) |
 | Ctrl+K | Cycle keep time (1h → 1d → 7d → forever) |
 | Click the keep chip | Pick a keep time |
 | Type | Search |

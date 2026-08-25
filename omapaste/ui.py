@@ -260,7 +260,7 @@ class Overlay:
         self.stack.add_named(self.empty, "empty")
 
         footer = Gtk.Label(
-            label="← → select   Enter paste   click copy   Del delete   Ctrl+K keep   Esc close",
+            label="← → select   Enter paste   click copy   Del / Backspace delete   Ctrl+K keep   Esc close",
             xalign=0,
         )
         footer.add_css_class("op-hint")
@@ -287,10 +287,11 @@ class Overlay:
         self.clipper.add_overlay(self.bar)
         self.window.set_child(self.clipper)
 
-        keys = Gtk.EventControllerKey()
-        keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-        keys.connect("key-pressed", self._on_key)
-        self.window.add_controller(keys)
+        for widget in (self.window, self.search):
+            keys = Gtk.EventControllerKey()
+            keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+            keys.connect("key-pressed", self._on_key)
+            widget.add_controller(keys)
 
         scroll = Gtk.EventControllerScroll.new(
             Gtk.EventControllerScrollFlags.HORIZONTAL
@@ -571,7 +572,9 @@ class Overlay:
         if keyval == Gdk.KEY_End and self.clips:
             self._select(len(self.clips) - 1, copy=True)
             return True
-        if keyval in (Gdk.KEY_Delete, Gdk.KEY_KP_Delete):
+        if keyval in (Gdk.KEY_Delete, Gdk.KEY_KP_Delete) or (
+            keyval == Gdk.KEY_BackSpace and not self.search.get_text()
+        ):
             self.delete_selected()
             return True
         if ctrl and keyval in (Gdk.KEY_k, Gdk.KEY_K):
