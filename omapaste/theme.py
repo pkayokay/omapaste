@@ -70,8 +70,6 @@ def css_for(theme: Theme) -> str:
     fg = theme.get("bright_foreground", theme.get("foreground"))
     muted = theme.get("dark_foreground", theme.get("muted"))
     accent = theme.get("accent")
-    selection = theme.get("selection")
-    border = theme.get("muted")
     return f"""
 window.omapaste {{
   background-color: transparent;
@@ -127,8 +125,18 @@ window.omapaste {{
 }}
 
 .op-card.selected {{
-  background-color: {selection};
+  background-color: alpha({accent}, 0.20);
   border: 1px solid {accent};
+}}
+
+.op-card.selected .op-card-header {{
+  background-color: alpha({fg}, 0.10);
+  border-bottom-color: alpha({fg}, 0.18);
+}}
+
+.op-card.selected .op-meta,
+.op-card.selected .op-chars {{
+  color: alpha({fg}, 0.92);
 }}
 
 .op-card-header {{
@@ -159,7 +167,7 @@ window.omapaste {{
 }}
 
 .op-meta, .op-chars {{
-  color: {muted};
+  color: alpha({fg}, 0.70);
   font-size: 11px;
 }}
 
