@@ -108,6 +108,8 @@ impl Overlay {
 
         let header = gtk::Box::new(Orientation::Horizontal, 10);
         header.add_css_class("op-header");
+        header.set_valign(Align::Center);
+        header.set_vexpand(false);
 
         let brand = gtk::Box::new(Orientation::Horizontal, 8);
         let history_icon = gtk::Image::from_icon_name("document-open-recent-symbolic");
@@ -122,17 +124,22 @@ impl Overlay {
         brand.append(&title);
         brand.append(&count_label);
         brand.set_halign(Align::Start);
+        brand.set_valign(Align::Center);
 
         let search_open_btn = gtk::Button::new();
         search_open_btn.set_has_frame(false);
         search_open_btn.set_icon_name("system-search-symbolic");
         search_open_btn.set_tooltip_text(Some("Search"));
         search_open_btn.add_css_class("op-icon-btn");
+        search_open_btn.set_valign(Align::Center);
 
         let search = gtk::Entry::new();
         search.set_placeholder_text(Some("Search clips"));
         search.add_css_class("op-search");
         search.set_hexpand(true);
+        search.set_vexpand(false);
+        search.set_valign(Align::Center);
+        search.set_size_request(-1, 28);
         search.set_icon_from_icon_name(
             gtk::EntryIconPosition::Primary,
             Some("system-search-symbolic"),
@@ -148,6 +155,7 @@ impl Overlay {
         shortcuts_btn.set_icon_name("input-keyboard-symbolic");
         shortcuts_btn.set_tooltip_text(Some("Shortcuts"));
         shortcuts_btn.add_css_class("op-icon-btn");
+        shortcuts_btn.set_valign(Align::Center);
         let shortcuts = shortcuts_popover();
         shortcuts.set_parent(&shortcuts_btn);
 
@@ -156,6 +164,7 @@ impl Overlay {
         issues_btn.set_icon_name("help-about-symbolic");
         issues_btn.set_tooltip_text(Some("Report an issue"));
         issues_btn.add_css_class("op-icon-btn");
+        issues_btn.set_valign(Align::Center);
         issues_btn.connect_clicked(|_| {
             let _ = std::process::Command::new("xdg-open")
                 .arg(ISSUES_URL)

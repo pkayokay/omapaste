@@ -89,7 +89,7 @@ window.omapaste {{
 .op-bar {{
   background-color: alpha({bg}, 0.96);
   color: {fg};
-  border-radius: 18px;
+  border-radius: 8px;
   border: 1px solid alpha({fg}, 0.10);
   padding: 12px 16px 12px 16px;
   min-height: 292px;
@@ -106,7 +106,7 @@ window.omapaste {{
   padding: 2px 6px;
   min-width: 28px;
   min-height: 28px;
-  border-radius: 8px;
+  border-radius: 4px;
   background-color: transparent;
   color: alpha({fg}, 0.80);
 }}
@@ -124,6 +124,10 @@ window.omapaste {{
 .op-shortcuts {{
   padding: 10px 14px;
   min-width: 200px;
+}}
+
+popover contents {{
+  border-radius: 6px;
 }}
 
 .op-shortcut-key {{
@@ -146,9 +150,16 @@ window.omapaste {{
 .op-search {{
   background-color: {bg2};
   color: {fg};
-  border-radius: 10px;
-  padding: 4px 10px;
+  border-radius: 6px;
+  min-height: 28px;
+  padding: 0 8px;
   border: 1px solid alpha({fg}, 0.08);
+  font-size: 13px;
+}}
+
+.op-search text {{
+  min-height: 0;
+  padding: 0;
 }}
 
 .op-search:focus {{
@@ -162,7 +173,7 @@ window.omapaste {{
 .op-card {{
   background-color: {bg2};
   color: {fg};
-  border-radius: 14px;
+  border-radius: 6px;
   border: 1px solid alpha({fg}, 0.08);
   padding: 0;
 }}
@@ -189,6 +200,8 @@ window.omapaste {{
 .op-card-header {{
   background-color: alpha({fg}, 0.07);
   border-bottom: 1px solid alpha({fg}, 0.12);
+  border-top-left-radius: 5px;
+  border-top-right-radius: 5px;
   padding: 8px 10px 7px 10px;
 }}
 
@@ -225,6 +238,7 @@ window.omapaste {{
 
 .op-header {{
   padding: 0 4px;
+  min-height: 28px;
 }}
 "#
     )
