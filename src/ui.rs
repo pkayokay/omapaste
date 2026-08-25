@@ -12,8 +12,8 @@ use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 
 use crate::config::Config;
 use crate::paste::{copy_image, copy_text, paste_now, TargetWindow};
-use crate::store::{content_hash, next_keep, Clip, Store};
 use crate::paths::ISSUES_URL;
+use crate::store::{content_hash, next_keep, Clip, Store};
 use crate::theme::{css_for, load_theme};
 
 const BAR_HEIGHT: i32 = 304;
@@ -561,9 +561,7 @@ impl Overlay {
         }
         {
             let mut st = self.state.borrow_mut();
-            if st.selected + 1 >= st.clips.len() {
-                st.selected = st.selected.saturating_sub(1);
-            }
+            st.selected = select_after_delete(st.selected, st.clips.len());
         }
         self.refresh_rc(false);
     }
@@ -582,10 +580,9 @@ impl Overlay {
 
     fn select(self: &Rc<Self>, index: usize, copy: bool) {
         let n = self.state.borrow().clips.len();
-        if n == 0 {
+        let Some(index) = clamp_select(index, n) else {
             return;
-        }
-        let index = index.min(n - 1);
+        };
         self.state.borrow_mut().selected = index;
         let cards = self.state.borrow().cards.clone();
         for (i, card) in cards.iter().enumerate() {
@@ -666,93 +663,163 @@ impl Overlay {
 
     fn on_key(self: &Rc<Self>, key: gdk::Key, state: gdk::ModifierType) -> glib::Propagation {
         let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
-        if key == gdk::Key::Escape {
-            if self.shortcuts.is_visible() {
-                self.shortcuts.popdown();
-                return glib::Propagation::Stop;
+        match key_intent(key, ctrl, self.is_searching()) {
+            KeyIntent::Dismiss => {
+                if self.shortcuts.is_visible() {
+                    self.shortcuts.popdown();
+                } else if self.is_searching() {
+                    self.close_search_rc();
+                } else {
+                    self.hide_rc();
+                }
+                glib::Propagation::Stop
             }
-            if self.is_searching() {
-                self.close_search_rc();
-                return glib::Propagation::Stop;
+            KeyIntent::Paste => {
+                self.paste_selected();
+                glib::Propagation::Stop
             }
-            self.hide_rc();
-            return glib::Propagation::Stop;
-        }
-        if key == gdk::Key::Return || key == gdk::Key::KP_Enter {
-            self.paste_selected();
-            return glib::Propagation::Stop;
-        }
-        if key == gdk::Key::Left {
-            let i = self.state.borrow().selected;
-            self.select(i.saturating_sub(1), true);
-            return glib::Propagation::Stop;
-        }
-        if key == gdk::Key::Right {
-            let i = self.state.borrow().selected;
-            self.select(i + 1, true);
-            return glib::Propagation::Stop;
-        }
-        if key == gdk::Key::Home {
-            self.select(0, true);
-            return glib::Propagation::Stop;
-        }
-        if key == gdk::Key::End {
-            let n = self.state.borrow().clips.len();
-            if n > 0 {
-                self.select(n - 1, true);
+            KeyIntent::Left => {
+                let i = self.state.borrow().selected;
+                self.select(i.saturating_sub(1), true);
+                glib::Propagation::Stop
             }
-            return glib::Propagation::Stop;
+            KeyIntent::Right => {
+                let i = self.state.borrow().selected;
+                self.select(i + 1, true);
+                glib::Propagation::Stop
+            }
+            KeyIntent::Home => {
+                self.select(0, true);
+                glib::Propagation::Stop
+            }
+            KeyIntent::End => {
+                let n = self.state.borrow().clips.len();
+                if n > 0 {
+                    self.select(n - 1, true);
+                }
+                glib::Propagation::Stop
+            }
+            KeyIntent::Delete => {
+                self.delete_selected();
+                glib::Propagation::Stop
+            }
+            KeyIntent::CycleKeep => {
+                self.cycle_keep();
+                glib::Propagation::Stop
+            }
+            KeyIntent::OpenSearch => {
+                self.open_search("");
+                glib::Propagation::Stop
+            }
+            KeyIntent::TypeSearch(ch) => {
+                self.open_search(&ch.to_string());
+                glib::Propagation::Stop
+            }
+            KeyIntent::PasteNth(n) => {
+                self.select(n, true);
+                self.paste_selected();
+                glib::Propagation::Stop
+            }
+            KeyIntent::Other => glib::Propagation::Proceed,
         }
-        if key == gdk::Key::Delete
-            || key == gdk::Key::KP_Delete
-            || (key == gdk::Key::BackSpace && !self.is_searching())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum KeyIntent {
+    Dismiss,
+    Paste,
+    Left,
+    Right,
+    Home,
+    End,
+    Delete,
+    CycleKeep,
+    OpenSearch,
+    TypeSearch(char),
+    PasteNth(usize),
+    Other,
+}
+
+fn key_intent(key: gdk::Key, ctrl: bool, searching: bool) -> KeyIntent {
+    if key == gdk::Key::Escape {
+        return KeyIntent::Dismiss;
+    }
+    if key == gdk::Key::Return || key == gdk::Key::KP_Enter {
+        return KeyIntent::Paste;
+    }
+    if key == gdk::Key::Left {
+        return KeyIntent::Left;
+    }
+    if key == gdk::Key::Right {
+        return KeyIntent::Right;
+    }
+    if key == gdk::Key::Home {
+        return KeyIntent::Home;
+    }
+    if key == gdk::Key::End {
+        return KeyIntent::End;
+    }
+    if key == gdk::Key::Delete
+        || key == gdk::Key::KP_Delete
+        || (key == gdk::Key::BackSpace && !searching)
+    {
+        return KeyIntent::Delete;
+    }
+    if ctrl && (key == gdk::Key::k || key == gdk::Key::K) {
+        return KeyIntent::CycleKeep;
+    }
+    if ctrl && (key == gdk::Key::f || key == gdk::Key::F || key == gdk::Key::slash) {
+        return KeyIntent::OpenSearch;
+    }
+    if key == gdk::Key::slash && !searching {
+        return KeyIntent::OpenSearch;
+    }
+    if ctrl {
+        for (n, k) in [
+            gdk::Key::_1,
+            gdk::Key::_2,
+            gdk::Key::_3,
+            gdk::Key::_4,
+            gdk::Key::_5,
+            gdk::Key::_6,
+            gdk::Key::_7,
+            gdk::Key::_8,
+            gdk::Key::_9,
+        ]
+        .into_iter()
+        .enumerate()
         {
-            self.delete_selected();
-            return glib::Propagation::Stop;
-        }
-        if ctrl && (key == gdk::Key::k || key == gdk::Key::K) {
-            self.cycle_keep();
-            return glib::Propagation::Stop;
-        }
-        if ctrl && (key == gdk::Key::f || key == gdk::Key::F || key == gdk::Key::slash) {
-            self.open_search("");
-            return glib::Propagation::Stop;
-        }
-        if key == gdk::Key::slash && !self.is_searching() {
-            self.open_search("");
-            return glib::Propagation::Stop;
-        }
-        if ctrl {
-            for (n, k) in [
-                gdk::Key::_1,
-                gdk::Key::_2,
-                gdk::Key::_3,
-                gdk::Key::_4,
-                gdk::Key::_5,
-                gdk::Key::_6,
-                gdk::Key::_7,
-                gdk::Key::_8,
-                gdk::Key::_9,
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                if key == k {
-                    self.select(n, true);
-                    self.paste_selected();
-                    return glib::Propagation::Stop;
-                }
+            if key == k {
+                return KeyIntent::PasteNth(n);
             }
         }
-        if !ctrl && !self.is_searching() {
-            if let Some(ch) = key.to_unicode() {
-                if !ch.is_control() {
-                    self.open_search(&ch.to_string());
-                    return glib::Propagation::Stop;
-                }
+    }
+    if !ctrl && !searching {
+        if let Some(ch) = key.to_unicode() {
+            if !ch.is_control() {
+                return KeyIntent::TypeSearch(ch);
             }
         }
-        glib::Propagation::Proceed
+    }
+    KeyIntent::Other
+}
+
+fn clamp_select(index: usize, n: usize) -> Option<usize> {
+    if n == 0 {
+        None
+    } else {
+        Some(index.min(n - 1))
+    }
+}
+
+fn select_after_delete(selected: usize, len: usize) -> usize {
+    if len == 0 {
+        0
+    } else if selected + 1 >= len {
+        selected.saturating_sub(1)
+    } else {
+        selected
     }
 }
 
@@ -775,7 +842,10 @@ fn output_width() -> i32 {
 }
 
 fn format_age(ts: i64) -> String {
-    let now = chrono::Utc::now().timestamp();
+    format_age_at(ts, chrono::Utc::now().timestamp())
+}
+
+fn format_age_at(ts: i64, now: i64) -> String {
     let delta = (now - ts).max(0);
     if delta < 12 {
         return "just now".into();
@@ -914,4 +984,127 @@ fn shortcuts_popover() -> gtk::Popover {
     popover.set_has_arrow(false);
     popover.set_child(Some(&box_));
     popover
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn age_labels() {
+        let now = 1_700_000_000;
+        assert_eq!(format_age_at(now, now), "just now");
+        assert_eq!(format_age_at(now - 11, now), "just now");
+        assert_eq!(format_age_at(now - 12, now), "12s ago");
+        assert_eq!(format_age_at(now - 59, now), "59s ago");
+        assert_eq!(format_age_at(now - 60, now), "1m ago");
+        assert_eq!(format_age_at(now - 3599, now), "59m ago");
+        assert_eq!(format_age_at(now - 3600, now), "1h ago");
+        assert_eq!(format_age_at(now - 86399, now), "23h ago");
+        assert_eq!(format_age_at(now - 86400, now), "yesterday");
+        assert_eq!(format_age_at(now - 86400 * 2, now), "2d ago");
+        assert_eq!(format_age_at(now - 86400 * 6, now), "6d ago");
+        let week = format_age_at(now - 86400 * 7, now);
+        assert!(!week.ends_with("d ago"), "{week}");
+        let older = format_age_at(now - 86400 * 10, now);
+        assert!(!older.ends_with("d ago"), "{older}");
+        assert!(!older.is_empty());
+    }
+
+    #[test]
+    fn future_timestamps_are_just_now() {
+        let now = 1_700_000_000;
+        assert_eq!(format_age_at(now + 60, now), "just now");
+    }
+
+    #[test]
+    fn shortcut_table_covers_core_actions() {
+        let keys: Vec<_> = SHORTCUTS.iter().map(|(k, _)| *k).collect();
+        assert!(keys.contains(&"← →"));
+        assert!(keys.contains(&"Enter"));
+        assert!(keys.contains(&"Del"));
+        assert!(keys.contains(&"Ctrl+K"));
+        assert!(keys.contains(&"Esc"));
+        assert!(keys.contains(&"Type"));
+        assert!(keys.contains(&"Click"));
+    }
+
+    #[test]
+    fn key_intents_match_the_bar() {
+        assert_eq!(
+            key_intent(gdk::Key::Escape, false, false),
+            KeyIntent::Dismiss
+        );
+        assert_eq!(
+            key_intent(gdk::Key::Escape, false, true),
+            KeyIntent::Dismiss
+        );
+        assert_eq!(key_intent(gdk::Key::Return, false, false), KeyIntent::Paste);
+        assert_eq!(
+            key_intent(gdk::Key::KP_Enter, false, false),
+            KeyIntent::Paste
+        );
+        assert_eq!(key_intent(gdk::Key::Left, false, false), KeyIntent::Left);
+        assert_eq!(key_intent(gdk::Key::Right, false, false), KeyIntent::Right);
+        assert_eq!(key_intent(gdk::Key::Home, false, false), KeyIntent::Home);
+        assert_eq!(key_intent(gdk::Key::End, false, false), KeyIntent::End);
+        assert_eq!(key_intent(gdk::Key::Delete, false, true), KeyIntent::Delete);
+        assert_eq!(
+            key_intent(gdk::Key::KP_Delete, false, true),
+            KeyIntent::Delete
+        );
+        assert_eq!(
+            key_intent(gdk::Key::BackSpace, false, false),
+            KeyIntent::Delete
+        );
+        assert_eq!(
+            key_intent(gdk::Key::BackSpace, false, true),
+            KeyIntent::Other
+        );
+        assert_eq!(key_intent(gdk::Key::k, true, false), KeyIntent::CycleKeep);
+        assert_eq!(key_intent(gdk::Key::K, true, false), KeyIntent::CycleKeep);
+        assert_eq!(key_intent(gdk::Key::f, true, false), KeyIntent::OpenSearch);
+        assert_eq!(
+            key_intent(gdk::Key::slash, true, true),
+            KeyIntent::OpenSearch
+        );
+        assert_eq!(
+            key_intent(gdk::Key::slash, false, false),
+            KeyIntent::OpenSearch
+        );
+        assert_eq!(key_intent(gdk::Key::slash, false, true), KeyIntent::Other);
+        assert_eq!(
+            key_intent(gdk::Key::_1, true, false),
+            KeyIntent::PasteNth(0)
+        );
+        assert_eq!(
+            key_intent(gdk::Key::_9, true, false),
+            KeyIntent::PasteNth(8)
+        );
+        assert_eq!(
+            key_intent(gdk::Key::a, false, false),
+            KeyIntent::TypeSearch('a')
+        );
+        assert_eq!(key_intent(gdk::Key::a, false, true), KeyIntent::Other);
+        assert_eq!(key_intent(gdk::Key::a, true, false), KeyIntent::Other);
+    }
+
+    #[test]
+    fn type_to_search_accepts_non_ascii() {
+        let key = gdk::Key::from_name("eacute").expect("eacute key");
+        assert_eq!(key.to_unicode(), Some('é'));
+        assert_eq!(key_intent(key, false, false), KeyIntent::TypeSearch('é'));
+        assert_eq!(key_intent(key, false, true), KeyIntent::Other);
+    }
+
+    #[test]
+    fn selection_clamps_and_delete_keeps_a_neighbor() {
+        assert_eq!(clamp_select(0, 0), None);
+        assert_eq!(clamp_select(9, 3), Some(2));
+        assert_eq!(clamp_select(0, 3), Some(0));
+        assert_eq!(select_after_delete(0, 1), 0);
+        assert_eq!(select_after_delete(4, 5), 3);
+        assert_eq!(select_after_delete(2, 5), 2);
+        assert_eq!(select_after_delete(0, 0), 0);
+    }
 }

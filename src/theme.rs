@@ -48,22 +48,29 @@ pub fn load_theme() -> Theme {
 fn read_name() -> String {
     fs::read_to_string(omarchy_theme_name_path())
         .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+        .map(|s| parse_theme_name(&s))
         .unwrap_or_else(|| "unknown".into())
 }
 
-fn read_colors() -> HashMap<String, String> {
-    let mut colors: HashMap<String, String> = FALLBACK
+fn parse_theme_name(raw: &str) -> String {
+    let name = raw.trim();
+    if name.is_empty() {
+        "unknown".into()
+    } else {
+        name.to_string()
+    }
+}
+
+fn fallback_colors() -> HashMap<String, String> {
+    FALLBACK
         .iter()
         .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-        .collect();
-    let path = omarchy_theme_dir().join("colors.toml");
-    let Ok(text) = fs::read_to_string(path) else {
-        return colors;
-    };
+        .collect()
+}
+
+fn merge_colors_toml(colors: &mut HashMap<String, String>, text: &str) {
     let Ok(data) = text.parse::<toml::Table>() else {
-        return colors;
+        return;
     };
     for (key, value) in data {
         if let Some(s) = value.as_str() {
@@ -72,6 +79,15 @@ fn read_colors() -> HashMap<String, String> {
             }
         }
     }
+}
+
+fn read_colors() -> HashMap<String, String> {
+    let mut colors = fallback_colors();
+    let path = omarchy_theme_dir().join("colors.toml");
+    let Ok(text) = fs::read_to_string(path) else {
+        return colors;
+    };
+    merge_colors_toml(&mut colors, &text);
     colors
 }
 
@@ -247,4 +263,120 @@ pub fn watch_paths() -> Vec<std::path::PathBuf> {
         omarchy_theme_dir().join("colors.toml"),
         omarchy_theme_name_path(),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn theme_with(pairs: &[(&str, &str)]) -> Theme {
+        let mut colors = fallback_colors();
+        for (k, v) in pairs {
+            colors.insert((*k).into(), (*v).into());
+        }
+        Theme {
+            name: "test".into(),
+            colors,
+        }
+    }
+
+    #[test]
+    fn parse_theme_name_trims_and_defaults() {
+        assert_eq!(parse_theme_name("Last Horizon\n"), "Last Horizon");
+        assert_eq!(parse_theme_name("   "), "unknown");
+        assert_eq!(parse_theme_name(""), "unknown");
+    }
+
+    #[test]
+    fn merge_keeps_hex_and_mode_only() {
+        let mut colors = fallback_colors();
+        merge_colors_toml(
+            &mut colors,
+            r##"
+accent = "#ff0000"
+mode = "light"
+foreground = "red"
+count = 3
+"##,
+        );
+        assert_eq!(colors.get("accent").unwrap(), "#ff0000");
+        assert_eq!(colors.get("mode").unwrap(), "light");
+        assert_eq!(colors.get("foreground").unwrap(), "#c0caf5");
+    }
+
+    #[test]
+    fn invalid_toml_leaves_fallbacks() {
+        let mut colors = fallback_colors();
+        merge_colors_toml(&mut colors, "???");
+        assert_eq!(colors.get("accent").unwrap(), "#7aa2f7");
+    }
+
+    #[test]
+    fn get_falls_back_then_white() {
+        let theme = Theme {
+            name: "x".into(),
+            colors: HashMap::new(),
+        };
+        assert_eq!(theme.get("accent"), "#7aa2f7");
+        assert_eq!(theme.get("no-such-color"), "#ffffff");
+    }
+
+    #[test]
+    fn css_uses_theme_colors_and_square_chrome() {
+        let theme = theme_with(&[
+            ("background", "#111111"),
+            ("lighter_background", "#222222"),
+            ("bright_foreground", "#eeeeee"),
+            ("accent", "#abcdef"),
+        ]);
+        let css = css_for(&theme);
+        assert!(css.contains("#111111"));
+        assert!(css.contains("#222222"));
+        assert!(css.contains("#eeeeee"));
+        assert!(css.contains("#abcdef"));
+        assert!(css.contains("border-radius: 0"));
+        assert!(!css.contains("overflow"));
+        assert!(css.contains(".op-search text"));
+        assert!(css.contains("min-height: 28px"));
+    }
+
+    #[test]
+    fn watch_paths_follow_home() {
+        let _lock = crate::env_lock();
+        let dir = tempfile::TempDir::new().unwrap();
+        let old_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", dir.path());
+        let paths = watch_paths();
+        assert!(paths[0].ends_with("colors.toml"));
+        assert!(paths[1].ends_with("theme.name"));
+        assert!(paths[0].starts_with(dir.path()));
+        match old_home {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+
+    #[test]
+    fn load_theme_reads_omarchy_files() {
+        let _lock = crate::env_lock();
+        let dir = tempfile::TempDir::new().unwrap();
+        let old_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", dir.path());
+        let theme_dir = dir.path().join(".local/state/omarchy/current/theme");
+        std::fs::create_dir_all(&theme_dir).unwrap();
+        std::fs::write(
+            dir.path().join(".local/state/omarchy/current/theme.name"),
+            " Last Horizon \n",
+        )
+        .unwrap();
+        std::fs::write(theme_dir.join("colors.toml"), "accent = \"#010203\"\n").unwrap();
+        let theme = load_theme();
+        assert_eq!(theme.name, "Last Horizon");
+        assert_eq!(theme.get("accent"), "#010203");
+        assert_eq!(theme.get("background"), "#1a1b26");
+        match old_home {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
+    }
 }

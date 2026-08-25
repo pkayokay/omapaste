@@ -134,4 +134,68 @@ mod tests {
         assert_eq!(cfg.paste_keys, "shift-insert");
         assert!(cfg.keep_seconds().is_none());
     }
+
+    #[test]
+    fn default_config_text_parses() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, DEFAULT_CONFIG).unwrap();
+        let cfg = load_config(Some(&path));
+        assert_eq!(cfg.default_keep, "1d");
+        assert_eq!(cfg.max_items, 200);
+        assert_eq!(cfg.max_bytes, 8_000_000);
+        assert!(cfg.ignore_secrets);
+        assert_eq!(cfg.paste_keys, "auto");
+        assert_eq!(cfg.keep_seconds(), Some(86_400));
+    }
+
+    #[test]
+    fn floors_and_paste_key_values() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            "max_items = 0\nmax_bytes = 10\npaste_keys = \"ctrl-v\"\n",
+        )
+        .unwrap();
+        let cfg = load_config(Some(&path));
+        assert_eq!(cfg.max_items, 1);
+        assert_eq!(cfg.max_bytes, 1024);
+        assert_eq!(cfg.paste_keys, "ctrl-v");
+    }
+
+    #[test]
+    fn broken_toml_uses_defaults() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, "[[[[").unwrap();
+        let cfg = load_config(Some(&path));
+        assert_eq!(cfg.default_keep, "1d");
+        assert_eq!(cfg.paste_keys, "auto");
+    }
+
+    #[test]
+    fn extra_keys_are_ignored() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, "toggle_key = \"SUPER + V\"\ndefault_keep = \"7d\"\n").unwrap();
+        let cfg = load_config(Some(&path));
+        assert_eq!(cfg.default_keep, "7d");
+        assert_eq!(cfg.keep_seconds(), Some(86_400 * 7));
+    }
+
+    #[test]
+    fn creates_parent_dirs_and_keep_seconds() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("nested/dir/config.toml");
+        let cfg = load_config(Some(&path));
+        assert!(path.exists());
+        assert_eq!(cfg.keep_seconds(), Some(86_400));
+
+        fs::write(&path, "default_keep = \"1h\"\nmax_items = \"12\"\n").unwrap();
+        let cfg = load_config(Some(&path));
+        assert_eq!(cfg.default_keep, "1h");
+        assert_eq!(cfg.keep_seconds(), Some(3600));
+        assert_eq!(cfg.max_items, 200);
+    }
 }

@@ -88,10 +88,17 @@ fn run(
 
 pub fn current_window() -> Option<TargetWindow> {
     let out = run(&["hyprctl", "activewindow", "-j"], None, None).ok()?;
-    if !out.status.success() || out.stdout.iter().all(|b| b.is_ascii_whitespace()) {
+    if !out.status.success() {
         return None;
     }
-    let data: HyprWindow = serde_json::from_slice(&out.stdout).ok()?;
+    window_from_hypr_json(&out.stdout)
+}
+
+fn window_from_hypr_json(stdout: &[u8]) -> Option<TargetWindow> {
+    if stdout.iter().all(|b| b.is_ascii_whitespace()) {
+        return None;
+    }
+    let data: HyprWindow = serde_json::from_slice(stdout).ok()?;
     let address = data.address.filter(|s| !s.is_empty())?;
     Some(TargetWindow {
         address,
@@ -153,9 +160,12 @@ fn wl_copy(argv: &[&str], payload: &[u8]) {
     }
 }
 
+pub fn uses_shift_insert(paste_keys: &str, terminal: bool) -> bool {
+    paste_keys == "shift-insert" || (paste_keys == "auto" && terminal)
+}
+
 pub fn send_paste(target: Option<&TargetWindow>, paste_keys: &str) {
-    let use_shift = paste_keys == "shift-insert"
-        || (paste_keys == "auto" && target.map(|t| t.is_terminal()).unwrap_or(false));
+    let use_shift = uses_shift_insert(paste_keys, target.map(|t| t.is_terminal()).unwrap_or(false));
     let argv: &[&str] = if use_shift {
         &["wtype", "-M", "shift", "-k", "Insert", "-m", "shift"]
     } else {
@@ -177,4 +187,77 @@ pub fn paste_now(target: Option<&TargetWindow>, paste_keys: &str) {
     }
     thread::sleep(Duration::from_millis(150));
     send_paste(target, paste_keys);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn window(class: &str, tags: &[&str]) -> TargetWindow {
+        TargetWindow {
+            address: "0x1".into(),
+            wm_class: class.into(),
+            title: String::new(),
+            tags: tags.iter().map(|s| (*s).to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn terminals_by_class() {
+        for class in [
+            "com.mitchellh.ghostty",
+            "kitty",
+            "Alacritty",
+            "foot",
+            "org.wezfurlong.wezterm",
+            "rio",
+        ] {
+            assert!(window(class, &[]).is_terminal(), "{class}");
+        }
+        assert!(!window("firefox", &[]).is_terminal());
+        assert!(!window("google-chrome", &[]).is_terminal());
+    }
+
+    #[test]
+    fn terminals_by_hypr_tag() {
+        assert!(window("something", &["terminal"]).is_terminal());
+        assert!(window("something", &["terminal*"]).is_terminal());
+        assert!(!window("something", &["browser"]).is_terminal());
+    }
+
+    #[test]
+    fn paste_key_choice() {
+        assert!(uses_shift_insert("shift-insert", false));
+        assert!(uses_shift_insert("shift-insert", true));
+        assert!(!uses_shift_insert("ctrl-v", true));
+        assert!(!uses_shift_insert("ctrl-v", false));
+        assert!(uses_shift_insert("auto", true));
+        assert!(!uses_shift_insert("auto", false));
+        assert!(!uses_shift_insert("laser", true));
+    }
+
+    #[test]
+    fn hypr_json_window() {
+        let json = br#"{"address":"0xabc","class":"kitty","title":"vim","tags":["terminal"]}"#;
+        let win = window_from_hypr_json(json).unwrap();
+        assert_eq!(win.address, "0xabc");
+        assert_eq!(win.wm_class, "kitty");
+        assert_eq!(win.title, "vim");
+        assert!(win.is_terminal());
+
+        let sparse = br#"{"address":"0x1"}"#;
+        let win = window_from_hypr_json(sparse).unwrap();
+        assert_eq!(win.wm_class, "");
+        assert!(win.tags.is_empty());
+        assert!(!win.is_terminal());
+    }
+
+    #[test]
+    fn hypr_json_rejects_empty_or_invalid() {
+        assert!(window_from_hypr_json(b"").is_none());
+        assert!(window_from_hypr_json(b"   \n").is_none());
+        assert!(window_from_hypr_json(b"not-json").is_none());
+        assert!(window_from_hypr_json(br#"{"address":"","class":"kitty"}"#).is_none());
+        assert!(window_from_hypr_json(br#"{"class":"kitty"}"#).is_none());
+    }
 }

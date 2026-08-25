@@ -23,7 +23,10 @@ pub const SEED_CLIPS: &[(&str, &str)] = &[
         "fn greet(name: &str) -> String {\n    format!(\"hello, {name}\")\n}",
         "7d",
     ),
-    ("ssh -o StrictHostKeyChecking=accept-new git@github.com", "7d"),
+    (
+        "ssh -o StrictHostKeyChecking=accept-new git@github.com",
+        "7d",
+    ),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -416,7 +419,6 @@ fn row_clip(row: &rusqlite::Row) -> rusqlite::Result<Clip> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn tmp_store() -> (tempfile::TempDir, Store) {
         let dir = tempfile::TempDir::new().unwrap();
@@ -550,8 +552,96 @@ mod tests {
     }
 
     #[test]
-    fn now_is_sane() {
-        let _ = SystemTime::now().duration_since(UNIX_EPOCH);
+    fn get_missing_and_empty_list() {
+        let (_d, store) = tmp_store();
+        assert!(store.get(99).unwrap().is_none());
+        assert!(store.list("", Some(1)).unwrap().is_empty());
+        assert_eq!(store.count().unwrap(), 0);
+        assert!(store.delete(99).unwrap().is_none());
+    }
+
+    #[test]
+    fn persists_across_reopen() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("history.sqlite");
+        {
+            let store = Store::open(&path).unwrap();
+            add(&store, "kept", "1d", 1);
+        }
+        let store = Store::open(&path).unwrap();
+        assert_eq!(store.count().unwrap(), 1);
+        assert_eq!(
+            store.list("", Some(2)).unwrap()[0].text.as_deref(),
+            Some("kept")
+        );
+    }
+
+    #[test]
+    fn expiry_boundary_is_exclusive_in_list() {
+        let (_d, store) = tmp_store();
+        add(&store, "short", "1h", 100);
+        assert_eq!(store.list("", Some(100 + 3600)).unwrap().len(), 0);
+        assert_eq!(store.list("", Some(100 + 3599)).unwrap().len(), 1);
+        assert_eq!(store.count().unwrap(), 1);
+        store.prune(50, Some(100 + 3600)).unwrap();
+        assert_eq!(store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn dedup_does_not_change_keep() {
+        let (_d, store) = tmp_store();
+        let first = add(&store, "hello", "1h", 10);
+        let again = add(&store, "hello", "forever", 40);
+        assert_eq!(first.id, again.id);
+        assert_eq!(again.keep_preset, "1h");
+        assert_eq!(again.keep_until, Some(10 + 3600));
+        assert_eq!(again.last_used_at, 40);
+    }
+
+    #[test]
+    fn prune_returns_expired_image_paths() {
+        let (_d, store) = tmp_store();
+        store
+            .add(
+                "image",
+                "image/png",
+                b"png",
+                None,
+                "Image",
+                Some("/tmp/expired.png"),
+                "1h",
+                50,
+                Some(10),
+            )
+            .unwrap();
+        let removed = store.prune(50, Some(10 + 3600)).unwrap();
+        assert_eq!(removed, [std::path::PathBuf::from("/tmp/expired.png")]);
+        assert_eq!(store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn same_timestamp_orders_by_newer_id() {
+        let (_d, store) = tmp_store();
+        add(&store, "first", "1d", 5);
+        add(&store, "second", "1d", 5);
+        let texts: Vec<_> = store
+            .list("", Some(6))
+            .unwrap()
+            .into_iter()
+            .filter_map(|c| c.text)
+            .collect();
+        assert_eq!(texts, ["second", "first"]);
+    }
+
+    #[test]
+    fn search_unicode_and_set_keep_recomputes_until() {
+        let (_d, store) = tmp_store();
+        add(&store, "こんにちは", "forever", 1);
+        assert_eq!(store.list("こん", Some(2)).unwrap().len(), 1);
+        let clip = add(&store, "pin", "forever", 1);
+        let updated = store.set_keep(clip.id, "1h", Some(50)).unwrap().unwrap();
+        assert_eq!(updated.keep_preset, "1h");
+        assert_eq!(updated.keep_until, Some(50 + 3600));
     }
 
     #[test]
@@ -563,10 +653,246 @@ mod tests {
         assert_eq!(clips.len(), SEED_CLIPS.len());
         assert!(clips.iter().all(|c| c.kind == "text"));
         assert_eq!(clips[0].text.as_deref(), Some(SEED_CLIPS[0].0));
-        assert!(
-            clips
-                .iter()
-                .any(|c| c.text.as_deref() == Some("https://omarchy.org"))
+        assert!(clips
+            .iter()
+            .any(|c| c.text.as_deref() == Some("https://omarchy.org")));
+        assert!(clips
+            .iter()
+            .any(|c| c.text.as_deref() == Some(crate::paths::ISSUES_URL)));
+        store.seed().unwrap();
+        assert_eq!(store.count().unwrap(), SEED_CLIPS.len() as i64);
+    }
+
+    fn sample_clip(kind: &str, text: Option<&str>, bytes: i64, keep: &str) -> Clip {
+        Clip {
+            id: 1,
+            created_at: 0,
+            last_used_at: 0,
+            keep_preset: keep.into(),
+            keep_until: None,
+            mime: "text/plain".into(),
+            kind: kind.into(),
+            text: text.map(str::to_string),
+            preview: text.unwrap_or("").into(),
+            hash: "x".into(),
+            image_path: None,
+            byte_size: bytes,
+        }
+    }
+
+    #[test]
+    fn empty_payload_is_ignored() {
+        let (_d, store) = tmp_store();
+        let none = store
+            .add(
+                "text",
+                "text/plain",
+                b"",
+                Some(""),
+                "",
+                None,
+                "1d",
+                50,
+                Some(1),
+            )
+            .unwrap();
+        assert!(none.is_none());
+        assert_eq!(store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn delete_removes_clip_and_returns_image_path() {
+        let (_d, store) = tmp_store();
+        let clip = add(&store, "bye", "1d", 1);
+        assert!(store.delete(clip.id).unwrap().is_none());
+        assert!(store.get(clip.id).unwrap().is_none());
+        assert_eq!(store.count().unwrap(), 0);
+
+        let image = store
+            .add(
+                "image",
+                "image/png",
+                b"png-bytes",
+                None,
+                "Image",
+                Some("/tmp/clip.png"),
+                "1d",
+                50,
+                Some(2),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(image.kind, "image");
+        let path = store.delete(image.id).unwrap();
+        assert_eq!(path.as_deref(), Some(std::path::Path::new("/tmp/clip.png")));
+    }
+
+    #[test]
+    fn touch_reorders_by_last_used() {
+        let (_d, store) = tmp_store();
+        let a = add(&store, "a", "1d", 1);
+        add(&store, "b", "1d", 2);
+        store.touch(a.id, Some(9)).unwrap();
+        let texts: Vec<_> = store
+            .list("", Some(10))
+            .unwrap()
+            .into_iter()
+            .filter_map(|c| c.text)
+            .collect();
+        assert_eq!(texts, ["a", "b"]);
+    }
+
+    #[test]
+    fn invalid_keep_preset_is_ignored() {
+        let (_d, store) = tmp_store();
+        let clip = add(&store, "stay", "1h", 10);
+        let same = store.set_keep(clip.id, "nope", Some(11)).unwrap().unwrap();
+        assert_eq!(same.keep_preset, "1h");
+        assert_eq!(same.keep_until, Some(10 + 3600));
+    }
+
+    #[test]
+    fn add_prunes_to_max_items() {
+        let (_d, store) = tmp_store();
+        add(&store, "old", "1d", 1);
+        add(&store, "mid", "1d", 2);
+        store
+            .add(
+                "text",
+                "text/plain",
+                b"new",
+                Some("new"),
+                "new",
+                None,
+                "1d",
+                2,
+                Some(3),
+            )
+            .unwrap();
+        let texts: Vec<_> = store
+            .list("", Some(4))
+            .unwrap()
+            .into_iter()
+            .filter_map(|c| c.text)
+            .collect();
+        assert_eq!(texts, ["new", "mid"]);
+    }
+
+    #[test]
+    fn search_is_case_insensitive_and_uses_full_text() {
+        let (_d, store) = tmp_store();
+        store
+            .add(
+                "text",
+                "text/plain",
+                b"Hello Tokyo Night",
+                Some("Hello Tokyo Night"),
+                "Hello…",
+                None,
+                "1d",
+                50,
+                Some(1),
+            )
+            .unwrap();
+        assert_eq!(store.list("tokyo", Some(2)).unwrap().len(), 1);
+        assert_eq!(store.list("HELLO", Some(2)).unwrap().len(), 1);
+        assert_eq!(store.list("night", Some(2)).unwrap().len(), 1);
+        assert_eq!(store.list("   ", Some(2)).unwrap().len(), 1);
+        assert!(store.list("missing", Some(2)).unwrap().is_empty());
+    }
+
+    #[test]
+    fn preview_collapses_whitespace_and_ellipsizes() {
+        assert_eq!(make_preview("  foo   bar  ", 280), "foo bar");
+        assert_eq!(make_preview("abcd", 4), "abcd");
+        assert_eq!(make_preview("abcde", 4), "abc…");
+        let preview = make_preview("こんにちは世界", 4);
+        assert!(preview.ends_with('…'));
+        assert_eq!(preview.chars().count(), 4);
+    }
+
+    #[test]
+    fn hash_includes_kind_and_mime() {
+        assert_ne!(
+            content_hash("text", "text/plain", b"abc"),
+            content_hash("image", "text/plain", b"abc")
         );
+        assert_ne!(
+            content_hash("text", "text/plain", b"abc"),
+            content_hash("text", "text/html", b"abc")
+        );
+    }
+
+    #[test]
+    fn keep_helpers() {
+        assert!(keep_by_key("nope").is_none());
+        assert_eq!(next_keep("nope").key, "7d");
+        assert_eq!(keep_until_from("nope", 0), Some(86_400));
+        assert_eq!(keep_until_from("7d", 0), Some(86_400 * 7));
+    }
+
+    #[test]
+    fn clip_labels_and_sizes() {
+        let one = sample_clip("text", Some("é"), 0, "1d");
+        assert_eq!(one.kind_label(), "Text");
+        assert_eq!(one.format_chars(), "1 char");
+        assert_eq!(one.keep_short(), "1d");
+        assert_eq!(one.keep_label(), "1 day");
+
+        let many = sample_clip("text", Some("ab"), 0, "forever");
+        assert_eq!(many.format_chars(), "2 chars");
+        assert_eq!(many.keep_short(), "∞");
+        assert_eq!(many.keep_label(), "Forever");
+
+        let empty = sample_clip("text", None, 0, "7d");
+        assert_eq!(empty.format_chars(), "0 chars");
+        assert_eq!(empty.kind_label(), "Text");
+
+        let image = sample_clip("image", None, 500, "1h");
+        assert_eq!(image.kind_label(), "Image");
+        assert_eq!(image.format_chars(), "500 B");
+        assert_eq!(
+            sample_clip("image", None, 1536, "1h").format_chars(),
+            "1.5 KB"
+        );
+        assert_eq!(
+            sample_clip("image", None, 20_480, "1h").format_chars(),
+            "20 KB"
+        );
+        assert_eq!(
+            sample_clip("image", None, 2 * 1024 * 1024, "1h").format_chars(),
+            "2.0 MB"
+        );
+        assert_eq!(
+            sample_clip("foo_bar", None, 0, "1d").kind_label(),
+            "foo bar"
+        );
+        assert_eq!(
+            sample_clip("image", None, 1023, "1h").format_chars(),
+            "1023 B"
+        );
+        assert_eq!(
+            sample_clip("image", None, 1024, "1h").format_chars(),
+            "1.0 KB"
+        );
+        let unknown = sample_clip("text", Some("x"), 0, "custom");
+        assert_eq!(unknown.keep_label(), "custom");
+        assert_eq!(unknown.keep_short(), "custom");
+    }
+
+    #[test]
+    fn preview_tiny_limit_is_ellipsis() {
+        assert_eq!(make_preview("abc", 1), "…");
+        assert_eq!(make_preview("abc", 0), "…");
+    }
+
+    #[test]
+    fn seed_keep_mix() {
+        let (_d, store) = tmp_store();
+        store.seed().unwrap();
+        let clips = store.list("", None).unwrap();
+        assert!(clips.iter().any(|c| c.keep_preset == "forever"));
+        assert!(clips.iter().any(|c| c.keep_preset == "7d"));
+        assert!(clips.iter().all(|c| c.keep_preset != "1h"));
     }
 }

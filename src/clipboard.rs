@@ -122,51 +122,79 @@ fn capture(
     ignore_hash: &Mutex<Option<(String, i64)>>,
 ) -> Result<Option<Clip>, String> {
     let types = list_types();
-    if config.ignore_secrets && looks_secret(&types) {
-        return Ok(None);
-    }
-    if label.starts_with("image") {
+    let (mime, payload) = if label.starts_with("image") {
         let mut mime = first_image_mime(&types).unwrap_or("image/png").to_string();
         let mut payload = paste_bytes(&["wl-paste", "--type", &mime, "--no-newline"]);
         if payload.is_empty() {
             payload = paste_bytes(&["wl-paste", "--type", "image/png", "--no-newline"]);
             mime = "image/png".into();
         }
-        if payload.is_empty() || payload.len() as i64 > config.max_bytes {
-            return Ok(None);
-        }
-        let digest = content_hash("image", &mime, &payload);
+        (mime, payload)
+    } else {
+        (
+            "text/plain".into(),
+            paste_bytes(&["wl-paste", "--type", "text", "--no-newline"]),
+        )
+    };
+    ingest(
+        store,
+        config,
+        images_dir,
+        label,
+        &types,
+        &mime,
+        &payload,
+        ignore_hash,
+        None,
+    )
+}
+
+fn ingest(
+    store: &Store,
+    config: &Config,
+    images_dir: &std::path::Path,
+    label: &str,
+    types: &[String],
+    mime: &str,
+    payload: &[u8],
+    ignore_hash: &Mutex<Option<(String, i64)>>,
+    now: Option<i64>,
+) -> Result<Option<Clip>, String> {
+    if config.ignore_secrets && looks_secret(types) {
+        return Ok(None);
+    }
+    if payload.is_empty() || payload.len() as i64 > config.max_bytes {
+        return Ok(None);
+    }
+    if label.starts_with("image") {
+        let digest = content_hash("image", mime, payload);
         if should_ignore(&digest, ignore_hash) {
             return Ok(None);
         }
         let image_path = images_dir.join(format!("{digest}.bin"));
         if !image_path.exists() {
-            std::fs::write(&image_path, &payload).map_err(|e| e.to_string())?;
+            std::fs::write(&image_path, payload).map_err(|e| e.to_string())?;
         }
         return store
             .add(
                 "image",
-                &mime,
-                &payload,
+                mime,
+                payload,
                 None,
                 "Image",
                 Some(image_path.to_str().unwrap_or_default()),
                 &config.default_keep,
                 config.max_items,
-                None,
+                now,
             )
             .map_err(|e| e.to_string());
     }
 
-    let payload = paste_bytes(&["wl-paste", "--type", "text", "--no-newline"]);
-    if payload.is_empty() || payload.len() as i64 > config.max_bytes {
-        return Ok(None);
-    }
-    let text = String::from_utf8_lossy(&payload).into_owned();
+    let text = String::from_utf8_lossy(payload).into_owned();
     if text.trim().is_empty() {
         return Ok(None);
     }
-    let digest = content_hash("text", "text/plain", &payload);
+    let digest = content_hash("text", "text/plain", payload);
     if should_ignore(&digest, ignore_hash) {
         return Ok(None);
     }
@@ -174,13 +202,13 @@ fn capture(
         .add(
             "text",
             "text/plain",
-            &payload,
+            payload,
             Some(&text),
             &make_preview(&text, 280),
             None,
             &config.default_keep,
             config.max_items,
-            None,
+            now,
         )
         .map_err(|e| e.to_string())
 }
@@ -205,7 +233,11 @@ fn list_types() -> Vec<String> {
     if !out.status.success() {
         return Vec::new();
     }
-    String::from_utf8_lossy(&out.stdout)
+    parse_mime_list(&String::from_utf8_lossy(&out.stdout))
+}
+
+fn parse_mime_list(stdout: &str) -> Vec<String> {
+    stdout
         .lines()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -236,4 +268,195 @@ fn paste_bytes(argv: &[&str]) -> Vec<u8> {
         .filter(|o| o.status.success())
         .map(|o| o.stdout)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn secret_mime_types_are_skipped() {
+        assert!(looks_secret(&[
+            "text/plain".into(),
+            "x-kde-passwordManagerHint".into()
+        ]));
+        assert!(looks_secret(&["application/x-keepassxc".into()]));
+        assert!(looks_secret(&["text/secret".into()]));
+        assert!(looks_secret(&["x-nm-origin".into()]));
+        assert!(!looks_secret(&["text/plain".into(), "text/html".into()]));
+        assert!(!looks_secret(&[]));
+    }
+
+    #[test]
+    fn first_image_mime_prefers_listed_image() {
+        let types = vec!["text/plain".into(), "image/png".into(), "image/jpeg".into()];
+        assert_eq!(first_image_mime(&types), Some("image/png"));
+        assert_eq!(first_image_mime(&["text/plain".into()]), None);
+    }
+
+    #[test]
+    fn ignore_hash_only_matches_live_digest() {
+        let now = glib::monotonic_time();
+        let slot = Mutex::new(Some(("abc".into(), now + 5_000_000)));
+        assert!(should_ignore("abc", &slot));
+        assert!(!should_ignore("def", &slot));
+        *slot.lock().unwrap() = Some(("abc".into(), now - 1));
+        assert!(!should_ignore("abc", &slot));
+        *slot.lock().unwrap() = None;
+        assert!(!should_ignore("abc", &slot));
+    }
+
+    #[test]
+    fn parse_mime_list_drops_blank_lines() {
+        assert_eq!(
+            parse_mime_list("text/plain\n\n  image/png  \n"),
+            vec!["text/plain".to_string(), "image/png".to_string()]
+        );
+        assert!(parse_mime_list("").is_empty());
+    }
+
+    fn cfg() -> Config {
+        Config {
+            default_keep: "1d".into(),
+            max_items: 50,
+            max_bytes: 100,
+            ignore_secrets: true,
+            paste_keys: "auto".into(),
+        }
+    }
+
+    fn ingest_text(
+        store: &Store,
+        dir: &std::path::Path,
+        config: &Config,
+        types: &[&str],
+        payload: &[u8],
+        ignore: &Mutex<Option<(String, i64)>>,
+    ) -> Option<Clip> {
+        let types: Vec<String> = types.iter().map(|s| (*s).to_string()).collect();
+        ingest(
+            store,
+            config,
+            dir,
+            "text",
+            &types,
+            "text/plain",
+            payload,
+            ignore,
+            Some(10),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn ingest_skips_secrets_empty_whitespace_and_oversize() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("db")).unwrap();
+        let ignore = Mutex::new(None);
+        let images = dir.path().join("images");
+        std::fs::create_dir_all(&images).unwrap();
+
+        assert!(ingest_text(
+            &store,
+            &images,
+            &cfg(),
+            &["text/plain", "x-kde-passwordManagerHint"],
+            b"secret",
+            &ignore,
+        )
+        .is_none());
+
+        let mut open = cfg();
+        open.ignore_secrets = false;
+        assert!(ingest_text(
+            &store,
+            &images,
+            &open,
+            &["text/plain", "x-kde-passwordManagerHint"],
+            b"secret",
+            &ignore,
+        )
+        .is_some());
+
+        assert!(ingest_text(&store, &images, &cfg(), &["text/plain"], b"", &ignore).is_none());
+        assert!(ingest_text(&store, &images, &cfg(), &["text/plain"], b"   \n", &ignore).is_none());
+        let big = vec![b'a'; 101];
+        assert!(ingest_text(&store, &images, &cfg(), &["text/plain"], &big, &ignore).is_none());
+    }
+
+    #[test]
+    fn ingest_stores_text_and_honors_ignore_hash() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("db")).unwrap();
+        let ignore = Mutex::new(None);
+        let images = dir.path().join("images");
+        std::fs::create_dir_all(&images).unwrap();
+
+        let clip = ingest_text(
+            &store,
+            &images,
+            &cfg(),
+            &["text/plain"],
+            b"hello world",
+            &ignore,
+        )
+        .unwrap();
+        assert_eq!(clip.kind, "text");
+        assert_eq!(clip.preview, "hello world");
+        assert_eq!(clip.keep_preset, "1d");
+
+        let digest = content_hash("text", "text/plain", b"hello world");
+        *ignore.lock().unwrap() = Some((digest, glib::monotonic_time() + 5_000_000));
+        assert!(ingest_text(
+            &store,
+            &images,
+            &cfg(),
+            &["text/plain"],
+            b"hello world",
+            &ignore,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn ingest_writes_image_once() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = Store::open(&dir.path().join("db")).unwrap();
+        let ignore = Mutex::new(None);
+        let images = dir.path().join("images");
+        std::fs::create_dir_all(&images).unwrap();
+        let payload = b"png-bytes-here";
+        let types = vec!["image/png".to_string()];
+        let clip = ingest(
+            &store,
+            &cfg(),
+            &images,
+            "image/png",
+            &types,
+            "image/png",
+            payload,
+            &ignore,
+            Some(10),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(clip.kind, "image");
+        let path = std::path::PathBuf::from(clip.image_path.unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), payload);
+
+        std::fs::write(&path, b"stale").unwrap();
+        ingest(
+            &store,
+            &cfg(),
+            &images,
+            "image/png",
+            &types,
+            "image/png",
+            payload,
+            &ignore,
+            Some(11),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"stale");
+    }
 }

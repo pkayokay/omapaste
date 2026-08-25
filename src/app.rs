@@ -188,3 +188,19 @@ fn unlink(paths: &[std::path::PathBuf]) {
         let _ = std::fs::remove_file(p);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn unlink_removes_existing_and_ignores_missing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let present = dir.path().join("a.bin");
+        let missing = dir.path().join("gone.bin");
+        fs::write(&present, b"x").unwrap();
+        unlink(&[present.clone(), missing]);
+        assert!(!present.exists());
+    }
+}
