@@ -24,7 +24,7 @@ from omapaste.theme import Theme, css_for, load_theme
 
 log = logging.getLogger("omapaste")
 
-BAR_HEIGHT = 348
+BAR_HEIGHT = 304
 CARD_WIDTH = 210
 CARD_HEIGHT = 236
 VISIBLE_MARGIN = 14
@@ -223,20 +223,51 @@ class Overlay:
         self.bar.set_hexpand(True)
         self.bar.set_halign(Gtk.Align.FILL)
 
-        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         header.add_css_class("op-header")
-        title = Gtk.Label(label="omapaste", xalign=0)
+
+        self.brand = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        history_icon = Gtk.Image.new_from_icon_name("document-open-recent-symbolic")
+        history_icon.set_pixel_size(16)
+        title = Gtk.Label(label="History", xalign=0)
         title.add_css_class("op-title")
+        self.count_label = Gtk.Label(xalign=0)
+        self.count_label.add_css_class("op-count")
+        self.brand.append(history_icon)
+        self.brand.append(title)
+        self.brand.append(self.count_label)
+        self.brand.set_halign(Gtk.Align.START)
+
+        self.search_open_btn = Gtk.Button()
+        self.search_open_btn.set_has_frame(False)
+        self.search_open_btn.set_icon_name("system-search-symbolic")
+        self.search_open_btn.set_tooltip_text("Search")
+        self.search_open_btn.add_css_class("op-icon-btn")
+        self.search_open_btn.connect("clicked", lambda *_: self._open_search())
+
         self.search = Gtk.Entry()
         self.search.set_placeholder_text("Search clips")
         self.search.add_css_class("op-search")
         self.search.set_hexpand(True)
+        self.search.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "system-search-symbolic")
+        self.search.set_icon_from_icon_name(Gtk.EntryIconPosition.SECONDARY, "edit-clear-symbolic")
+        self.search.set_icon_tooltip_text(Gtk.EntryIconPosition.SECONDARY, "Close search")
         self.search.connect("changed", self._on_search)
-        self.count_label = Gtk.Label(xalign=1)
-        self.count_label.add_css_class("op-count")
-        header.append(title)
+        self.search.connect("icon-press", self._on_search_icon)
+
+        self.hint = Gtk.Label(
+            label="← → select   Enter paste   click copy   Del delete   Ctrl+K keep   Esc close",
+            xalign=1,
+        )
+        self.hint.add_css_class("op-hint")
+        self.hint.set_ellipsize(Pango.EllipsizeMode.END)
+        self.hint.set_halign(Gtk.Align.END)
+        header.append(self.brand)
         header.append(self.search)
-        header.append(self.count_label)
+        header.append(self.search_open_btn)
+        header.append(self.hint)
+        self._search_open = False
+        self._sync_search_chrome()
 
         self.scroller = Gtk.ScrolledWindow()
         self.scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
@@ -259,16 +290,8 @@ class Overlay:
         self.stack.add_named(self.scroller, "clips")
         self.stack.add_named(self.empty, "empty")
 
-        footer = Gtk.Label(
-            label="← → select   Enter paste   click copy   Del / Backspace delete   Ctrl+K keep   Esc close",
-            xalign=0,
-        )
-        footer.add_css_class("op-hint")
-        footer.add_css_class("op-footer")
-
         self.bar.append(header)
         self.bar.append(self.stack)
-        self.bar.append(footer)
         self.bar.set_size_request(width, BAR_HEIGHT)
         self.bar.set_valign(Gtk.Align.START)
         self.bar.set_vexpand(False)
@@ -333,8 +356,7 @@ class Overlay:
 
     def show(self, target: TargetWindow | None = None) -> None:
         self.target = target
-        self.filter_text = ""
-        self.search.set_text("")
+        self._close_search()
         self.selected_index = 0
         self.refresh()
         mapped = self.window.get_mapped()
@@ -534,6 +556,37 @@ class Overlay:
             adj.set_value(right - adj.get_page_size() + 12)
         return False
 
+    def _is_searching(self) -> bool:
+        return self._search_open
+
+    def _sync_search_chrome(self) -> None:
+        open_ = self._search_open
+        self.search.set_visible(open_)
+        self.search_open_btn.set_visible(not open_)
+        self.brand.set_hexpand(not open_)
+
+    def _open_search(self, prefix: str = "") -> None:
+        self._search_open = True
+        self._sync_search_chrome()
+        if prefix:
+            self.search.set_text(self.search.get_text() + prefix)
+            self.search.set_position(-1)
+        self.search.grab_focus()
+
+    def _close_search(self) -> None:
+        if self.search.get_text():
+            self.search.set_text("")
+        elif self.filter_text:
+            self.filter_text = ""
+            self.refresh()
+        self._search_open = False
+        self._sync_search_chrome()
+        self.window.grab_focus()
+
+    def _on_search_icon(self, _entry: Gtk.Entry, position: Gtk.EntryIconPosition) -> None:
+        if position == Gtk.EntryIconPosition.SECONDARY:
+            self._close_search()
+
     def _on_search(self, entry: Gtk.Entry) -> None:
         self.filter_text = entry.get_text()
         self.selected_index = 0
@@ -552,8 +605,8 @@ class Overlay:
         ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
 
         if keyval == Gdk.KEY_Escape:
-            if self.search.get_text():
-                self.search.set_text("")
+            if self._is_searching():
+                self._close_search()
                 return True
             self.hide()
             return True
@@ -573,7 +626,7 @@ class Overlay:
             self._select(len(self.clips) - 1, copy=True)
             return True
         if keyval in (Gdk.KEY_Delete, Gdk.KEY_KP_Delete) or (
-            keyval == Gdk.KEY_BackSpace and not self.search.get_text()
+            keyval == Gdk.KEY_BackSpace and not self._is_searching()
         ):
             self.delete_selected()
             return True
@@ -581,10 +634,10 @@ class Overlay:
             self.cycle_keep()
             return True
         if ctrl and keyval in (Gdk.KEY_f, Gdk.KEY_F, Gdk.KEY_slash):
-            self.search.grab_focus()
+            self._open_search()
             return True
-        if keyval == Gdk.KEY_slash and not self.search.has_focus():
-            self.search.grab_focus()
+        if keyval == Gdk.KEY_slash and not self._is_searching():
+            self._open_search()
             return True
         if ctrl and Gdk.KEY_1 <= keyval <= Gdk.KEY_9:
             self._select(keyval - Gdk.KEY_1, copy=True)
@@ -592,16 +645,9 @@ class Overlay:
             return True
 
         # Start typing to search, like Paste.app.
-        if not ctrl and not self.search.has_focus():
+        if not ctrl and not self._is_searching():
             char = chr(Gdk.keyval_to_unicode(keyval)) if Gdk.keyval_to_unicode(keyval) else ""
             if char.isprintable() and char:
-                self.search.grab_focus()
-                self.search.set_text(self.search.get_text() + char)
-                self.search.set_position(-1)
-                return True
-            if keyval == Gdk.KEY_BackSpace and self.search.get_text():
-                text = self.search.get_text()[:-1]
-                self.search.set_text(text)
-                self.search.set_position(-1)
+                self._open_search(char)
                 return True
         return False

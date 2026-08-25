@@ -83,14 +83,28 @@ window.omapaste {{
   color: {fg};
   border-radius: 18px;
   border: 1px solid alpha({fg}, 0.10);
-  padding: 12px 16px 10px 16px;
-  min-height: 330px;
+  padding: 12px 16px 12px 16px;
+  min-height: 292px;
 }}
 
 .op-title {{
   font-weight: 700;
   font-size: 13px;
   letter-spacing: 0.4px;
+  color: {fg};
+}}
+
+.op-icon-btn {{
+  padding: 2px 6px;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 8px;
+  background-color: transparent;
+  color: alpha({fg}, 0.80);
+}}
+
+.op-icon-btn:hover {{
+  background-color: alpha({fg}, 0.08);
   color: {fg};
 }}
 
@@ -195,7 +209,7 @@ window.omapaste {{
   font-size: 13px;
 }}
 
-.op-header, .op-footer {{
+.op-header {{
   padding: 0 4px;
 }}
 """
