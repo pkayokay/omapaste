@@ -89,7 +89,7 @@ window.omapaste {{
 .op-bar {{
   background-color: alpha({bg}, 0.96);
   color: {fg};
-  border-radius: 8px;
+  border-radius: 0;
   border: 1px solid alpha({fg}, 0.10);
   padding: 12px 16px 12px 16px;
   min-height: 292px;
@@ -106,7 +106,7 @@ window.omapaste {{
   padding: 2px 6px;
   min-width: 28px;
   min-height: 28px;
-  border-radius: 4px;
+  border-radius: 0;
   background-color: transparent;
   color: alpha({fg}, 0.80);
 }}
@@ -126,8 +126,8 @@ window.omapaste {{
   min-width: 200px;
 }}
 
-popover contents {{
-  border-radius: 6px;
+popover, popover.background, popover contents {{
+  border-radius: 0;
 }}
 
 .op-shortcut-key {{
@@ -150,7 +150,7 @@ popover contents {{
 .op-search {{
   background-color: {bg2};
   color: {fg};
-  border-radius: 6px;
+  border-radius: 0;
   min-height: 28px;
   padding: 0 8px;
   border: 1px solid alpha({fg}, 0.08);
@@ -173,7 +173,7 @@ popover contents {{
 .op-card {{
   background-color: {bg2};
   color: {fg};
-  border-radius: 6px;
+  border-radius: 0;
   border: 1px solid alpha({fg}, 0.08);
   padding: 0;
 }}
@@ -200,8 +200,6 @@ popover contents {{
 .op-card-header {{
   background-color: alpha({fg}, 0.07);
   border-bottom: 1px solid alpha({fg}, 0.12);
-  border-top-left-radius: 5px;
-  border-top-right-radius: 5px;
   padding: 8px 10px 7px 10px;
 }}
 

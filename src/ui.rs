@@ -911,6 +911,7 @@ fn shortcuts_popover() -> gtk::Popover {
     issues.set_selectable(true);
     issues.add_css_class("op-issues");
     box_.append(&issues);
+    popover.set_has_arrow(false);
     popover.set_child(Some(&box_));
     popover
 }
