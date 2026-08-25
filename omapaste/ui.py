@@ -19,14 +19,14 @@ except (ImportError, ValueError):
 
 from omapaste.config import Config
 from omapaste.paste import TargetWindow, copy_image, copy_text, paste_now
-from omapaste.store import KEEP_PRESETS, Clip, Store, content_hash, next_keep
+from omapaste.store import Clip, Store, content_hash, next_keep
 from omapaste.theme import Theme, css_for, load_theme
 
 log = logging.getLogger("omapaste")
 
-BAR_HEIGHT = 268
+BAR_HEIGHT = 348
 CARD_WIDTH = 210
-CARD_HEIGHT = 176
+CARD_HEIGHT = 236
 VISIBLE_MARGIN = 14
 SLIDE_PX = BAR_HEIGHT + 24
 ANIM_DURATION_MS = 220
@@ -42,6 +42,29 @@ def _output_width() -> int:
     monitor = monitors.get_item(0)
     geometry = monitor.get_geometry()
     return max(800, int(geometry.width) - 36)
+
+
+def kind_label(clip: Clip) -> str:
+    if clip.kind == "image":
+        return "Image"
+    if clip.kind == "text":
+        return "Text"
+    return clip.kind.replace("_", " ").title()
+
+
+def format_chars(clip: Clip) -> str:
+    if clip.kind == "image":
+        size = clip.byte_size
+        if size < 1024:
+            return f"{size} B"
+        if size < 1024 * 1024:
+            kb = size / 1024
+            return f"{kb:.1f} KB" if kb < 10 else f"{kb:.0f} KB"
+        return f"{size / (1024 * 1024):.1f} MB"
+    n = len(clip.text or "")
+    if n == 1:
+        return "1 char"
+    return f"{n:,} chars"
 
 
 def format_age(ts: int, now: int | None = None) -> str:
@@ -64,8 +87,8 @@ def format_age(ts: int, now: int | None = None) -> str:
 
 
 class ClipCard(Gtk.Box):
-    def __init__(self, clip: Clip, on_keep: Callable[[Clip, str], None]):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    def __init__(self, clip: Clip):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.clip = clip
         self.add_css_class("op-card")
         self.set_size_request(CARD_WIDTH, CARD_HEIGHT)
@@ -75,7 +98,18 @@ class ClipCard(Gtk.Box):
         self.set_valign(Gtk.Align.CENTER)
         self.set_overflow(Gtk.Overflow.HIDDEN)
 
+        header = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        header.add_css_class("op-card-header")
+        kind = Gtk.Label(label=kind_label(clip), xalign=0)
+        kind.add_css_class("op-kind")
+        age = Gtk.Label(label=format_age(clip.last_used_at), xalign=0)
+        age.add_css_class("op-meta")
+        header.append(kind)
+        header.append(age)
+        self.append(header)
+
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.body.add_css_class("op-card-body")
         self.body.set_vexpand(True)
         self.body.set_hexpand(False)
         body = self.body
@@ -101,20 +135,14 @@ class ClipCard(Gtk.Box):
             body.append(label)
         self.append(body)
 
-        meta = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        age = Gtk.Label(label=format_age(clip.last_used_at), xalign=0)
-        age.add_css_class("op-meta")
-        age.set_hexpand(True)
-        self.keep_button = Gtk.Button(label=clip.keep_short)
-        self.keep_button.add_css_class("op-keep")
-        self.keep_button.set_has_frame(False)
-        self.keep_button.set_tooltip_text(f"Keep {clip.keep_label}. Click to change.")
-        self._keep_popover = _keep_popover(clip, on_keep)
-        self._keep_popover.set_parent(self.keep_button)
-        self.keep_button.connect("clicked", lambda *_: self._keep_popover.popup())
-        meta.append(age)
-        meta.append(self.keep_button)
-        self.append(meta)
+        footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        footer.add_css_class("op-card-footer")
+        chars = Gtk.Label(label=format_chars(clip), xalign=0.5)
+        chars.add_css_class("op-chars")
+        chars.set_halign(Gtk.Align.CENTER)
+        chars.set_hexpand(True)
+        footer.append(chars)
+        self.append(footer)
 
     def set_selected(self, selected: bool) -> None:
         if selected:
@@ -123,44 +151,16 @@ class ClipCard(Gtk.Box):
             self.remove_css_class("selected")
 
 
-def _apply_keep(
-    popover: Gtk.Popover,
-    on_keep: Callable[[Clip, str], None],
-    clip: Clip,
-    key: str,
-) -> None:
-    popover.popdown()
-    on_keep(clip, key)
-
-
-def _keep_popover(clip: Clip, on_keep: Callable[[Clip, str], None]) -> Gtk.Popover:
-    popover = Gtk.Popover()
-    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-    box.add_css_class("op-keep-menu")
-    for preset in KEEP_PRESETS:
-        button = Gtk.Button(label=preset.label)
-        button.set_has_frame(False)
-        if preset.key == clip.keep_preset:
-            button.add_css_class("suggested-action")
-        button.connect(
-            "clicked",
-            lambda _b, key=preset.key: _apply_keep(popover, on_keep, clip, key),
-        )
-        box.append(button)
-    popover.set_child(box)
-    return popover
-
-
 def _image_preview(path: str) -> Gtk.Widget:
     try:
-        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 190, 120, True)
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 190, 140, True)
         texture = Gdk.Texture.new_for_pixbuf(pixbuf)
         picture = Gtk.Picture.new_for_paintable(texture)
         picture.set_content_fit(Gtk.ContentFit.COVER)
         picture.set_can_shrink(True)
         picture.set_hexpand(False)
         picture.set_vexpand(True)
-        picture.set_size_request(190, 120)
+        picture.set_size_request(190, 140)
         return picture
     except Exception:
         label = Gtk.Label(label="Image", xalign=0, yalign=0)
@@ -492,10 +492,10 @@ class Overlay:
             return
         self.stack.set_visible_child_name("clips")
         for index, clip in enumerate(self.clips):
-            card = ClipCard(clip, self.set_keep)
+            card = ClipCard(clip)
             click = Gtk.GestureClick()
             click.connect("pressed", self._on_card_click, index)
-            card.body.add_controller(click)
+            card.add_controller(click)
             card.set_selected(index == self.selected_index)
             self.card_box.append(card)
             self.cards.append(card)

@@ -56,13 +56,12 @@ Without `--hypr`, install the binary only and bind it yourself.
 | Ctrl+1–9 | Paste that card |
 | Delete or Backspace | Remove the highlighted clip (Backspace edits search if it has text) |
 | Ctrl+K | Cycle keep time (1h → 1d → 7d → forever) |
-| Click the keep chip | Pick a keep time |
 | Type | Search |
 | Esc | Close (clears search first) |
 
 ## Keep time
 
-New clips use the default from `~/.config/omapaste/config.toml` (`1d` unless you change it). Change any clip from the keep chip on its card, or press Ctrl+K.
+New clips use the default from `~/.config/omapaste/config.toml` (`1d` unless you change it). Press Ctrl+K to cycle a clip's keep time.
 
 Expired clips are deleted in the background. Forever clips are kept until you delete them, and they are the last to be dropped if you hit `max_items`.
 

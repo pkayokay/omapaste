@@ -87,7 +87,7 @@ window.omapaste {{
   border-radius: 18px;
   border: 1px solid alpha({fg}, 0.10);
   padding: 12px 16px 10px 16px;
-  min-height: 250px;
+  min-height: 330px;
 }}
 
 .op-title {{
@@ -119,7 +119,7 @@ window.omapaste {{
   color: {fg};
   border-radius: 14px;
   border: 1px solid alpha({fg}, 0.08);
-  padding: 10px;
+  padding: 0;
 }}
 
 .op-card:hover {{
@@ -128,8 +128,28 @@ window.omapaste {{
 
 .op-card.selected {{
   background-color: {selection};
-  border: 2px solid {accent};
-  padding: 9px;
+  border: 1px solid {accent};
+}}
+
+.op-card-header {{
+  background-color: alpha({fg}, 0.07);
+  border-bottom: 1px solid alpha({fg}, 0.12);
+  padding: 8px 10px 7px 10px;
+}}
+
+.op-card-body {{
+  padding: 8px 10px 4px 10px;
+}}
+
+.op-card-footer {{
+  padding: 4px 10px 8px 10px;
+}}
+
+.op-kind {{
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  color: {fg};
 }}
 
 .op-preview {{
@@ -138,7 +158,7 @@ window.omapaste {{
   font-size: 12px;
 }}
 
-.op-meta {{
+.op-meta, .op-chars {{
   color: {muted};
   font-size: 11px;
 }}
