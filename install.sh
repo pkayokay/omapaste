@@ -24,23 +24,20 @@ for arg in "$@"; do
   esac
 done
 
+export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
+if ! command -v cargo >/dev/null; then
+  echo "cargo is not installed. Install Rust from https://rustup.rs and retry." >&2
+  exit 1
+fi
+
 mkdir -p "$DEST" "$BIN" "$APP" "$ICON"
-rm -rf "$DEST/omapaste"
-cp -a "$SRC/omapaste" "$DEST/omapaste"
 cp -a "$SRC/LICENSE" "$SRC/README.md" "$DEST/"
 install -Dm644 "$SRC/share/omapaste.desktop" "$APP/omapaste.desktop"
 install -Dm644 "$SRC/share/omapaste.svg" "$ICON/omapaste.svg"
 
-cat > "$BIN/omapaste" <<EOF
-#!/usr/bin/env python3
-import os
-import sys
-os.environ.setdefault("PYTHONUNBUFFERED", "1")
-sys.path.insert(0, "$DEST")
-from omapaste.cli import main
-raise SystemExit(main())
-EOF
-chmod +x "$BIN/omapaste"
+echo "Building omapaste (release)..."
+cargo build --release --manifest-path "$SRC/Cargo.toml"
+install -Dm755 "$SRC/target/release/omapaste" "$BIN/omapaste"
 
 echo "Installed omapaste to $BIN/omapaste"
 

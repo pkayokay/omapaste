@@ -22,10 +22,8 @@ MIT licensed. https://github.com/pkayokay/omapaste
 
 ## Requirements
 
-Omarchy already ships most of these:
-
-- Python 3.11+
-- GTK 4, PyGObject, gtk4-layer-shell
+- Rust (stable), for `./install.sh` / `cargo build --release`
+- GTK 4 and gtk4-layer-shell
 - `wl-clipboard` (`wl-copy` / `wl-paste`)
 - `wtype` (for paste)
 - Hyprland (for focus + the default keybind)
@@ -39,7 +37,7 @@ cd omapaste
 omapaste daemon
 ```
 
-`./install.sh --hypr` copies the app to `~/.local/share/omapaste`, puts `omapaste` on `~/.local/bin`, autostarts the daemon, and binds **Super+Shift+V**.
+`./install.sh --hypr` builds the Rust binary, puts `omapaste` on `~/.local/bin`, autostarts the daemon, and binds **Super+Shift+V**.
 
 That key is free in Omarchy. Super+Ctrl+V stays on the built-in clipboard picker.
 
