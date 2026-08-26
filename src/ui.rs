@@ -20,11 +20,11 @@ const BAR_HEIGHT: i32 = 304;
 const CARD_WIDTH: i32 = 210;
 const CARD_HEIGHT: i32 = 236;
 const CARD_BORDER: i32 = 1;
-const CARD_BODY_PAD_X: i32 = 10;
+const CARD_BODY_PAD_X: i32 = 12;
 /// 12px JetBrains Mono is ~7px/cell; 1.25 scale hinting can be ~8px.
 const PREVIEW_CELL_PX: i32 = 8;
-const PREVIEW_MAX_CHARS: i32 =
-    (CARD_WIDTH - 2 * CARD_BORDER - 2 * CARD_BODY_PAD_X) / PREVIEW_CELL_PX;
+const PREVIEW_INNER_WIDTH: i32 = CARD_WIDTH - 2 * CARD_BORDER - 2 * CARD_BODY_PAD_X;
+const PREVIEW_MAX_CHARS: i32 = PREVIEW_INNER_WIDTH / PREVIEW_CELL_PX;
 const VISIBLE_MARGIN: i32 = 14;
 const SLIDE_PX: i32 = BAR_HEIGHT + 24;
 const ANIM_DURATION: f64 = 0.220;
@@ -879,6 +879,15 @@ fn format_age_at(ts: i64, now: i64) -> String {
         .unwrap_or_else(|| format!("{days}d ago"))
 }
 
+/// Empty strip so glyph ink is not the first painted row of a clip box.
+fn ink_gap(px: i32) -> gtk::Box {
+    let gap = gtk::Box::new(Orientation::Horizontal, 0);
+    gap.set_size_request(1, px);
+    gap.set_hexpand(false);
+    gap.set_vexpand(false);
+    gap
+}
+
 fn clip_card(clip: &Clip) -> gtk::Box {
     let card = gtk::Box::new(Orientation::Vertical, 0);
     card.add_css_class("op-card");
@@ -887,13 +896,20 @@ fn clip_card(clip: &Clip) -> gtk::Box {
     card.set_vexpand(false);
     card.set_halign(Align::Start);
     card.set_valign(Align::Center);
-    card.set_overflow(Overflow::Hidden);
+    // Hidden + 1.25 scale rounds the clip inward and shaves the T.
+    card.set_overflow(Overflow::Visible);
 
     let header = gtk::Box::new(Orientation::Vertical, 2);
     header.add_css_class("op-card-header");
+    header.set_overflow(Overflow::Visible);
+    header.append(&ink_gap(4));
     let kind = gtk::Label::new(Some(&clip.kind_label()));
     kind.set_xalign(0.0);
+    // Extra height + yalign 1.0 keeps the T inside the label allocation.
+    kind.set_yalign(1.0);
+    kind.set_size_request(-1, 20);
     kind.add_css_class("op-kind");
+    kind.set_overflow(Overflow::Visible);
     let age = gtk::Label::new(Some(&format_age(clip.last_used_at)));
     age.set_xalign(0.0);
     age.add_css_class("op-meta");
@@ -905,26 +921,32 @@ fn clip_card(clip: &Clip) -> gtk::Box {
     body.add_css_class("op-card-body");
     body.set_vexpand(true);
     body.set_hexpand(true);
+    body.set_overflow(Overflow::Visible);
     if clip.kind == "image" {
         if let Some(ref path) = clip.image_path {
             body.append(&image_preview(path));
         }
     } else {
         let text = clip.text.clone().unwrap_or_else(|| clip.preview.clone());
+        body.append(&ink_gap(4));
         let label = gtk::Label::new(Some(&text));
         label.set_xalign(0.0);
-        label.set_yalign(0.0);
+        // Don't vexpand or yalign 1.0 would sit the preview on the card bottom.
+        label.set_yalign(1.0);
+        label.set_valign(Align::Start);
         label.set_wrap(true);
         label.set_wrap_mode(pango::WrapMode::WordChar);
         label.set_natural_wrap_mode(gtk::NaturalWrapMode::Word);
         label.set_ellipsize(pango::EllipsizeMode::End);
         label.set_lines(8);
         label.add_css_class("op-preview");
-        // Cap wrap to the padded 210px card. 28ch at this font overflows and
-        // Overflow::Hidden clips the last glyphs on each line.
+        // Wrap to the padded card in pixels. A ch-width request is wider than
+        // 210px here, so Overflow::Hidden was shaving trailing glyphs.
+        label.set_width_request(PREVIEW_INNER_WIDTH);
         label.set_max_width_chars(PREVIEW_MAX_CHARS);
         label.set_hexpand(true);
-        label.set_vexpand(true);
+        label.set_vexpand(false);
+        label.set_overflow(Overflow::Visible);
         body.append(&label);
     }
     card.append(&body);
@@ -951,6 +973,7 @@ fn image_preview(path: &str) -> gtk::Widget {
             picture.set_hexpand(false);
             picture.set_vexpand(true);
             picture.set_size_request(190, 140);
+            picture.set_overflow(Overflow::Hidden);
             picture.upcast()
         }
         Err(_) => {
@@ -1187,7 +1210,17 @@ mod tests {
         assert!(label.wraps());
         assert_eq!(label.width_chars(), -1);
         assert_eq!(label.max_width_chars(), PREVIEW_MAX_CHARS);
+        assert_eq!(label.width_request(), PREVIEW_INNER_WIDTH);
         assert_eq!(label.natural_wrap_mode(), gtk::NaturalWrapMode::Word);
+        assert_eq!(label.overflow(), Overflow::Visible);
+        assert_eq!(label.yalign(), 1.0);
+        assert!(!label.vexpands());
+        let kind = find_css(card.upcast_ref(), "op-kind").expect("kind label");
+        let kind = kind.downcast::<gtk::Label>().expect("kind is a label");
+        assert_eq!(kind.yalign(), 1.0);
+        assert_eq!(kind.height_request(), 20);
+        assert_eq!(kind.text().as_str(), "Text");
+        assert_eq!(card.overflow(), Overflow::Visible);
     }
 
     fn find_css(widget: &gtk::Widget, class: &str) -> Option<gtk::Widget> {

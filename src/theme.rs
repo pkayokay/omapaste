@@ -216,15 +216,15 @@ popover, popover.background, popover contents {{
 .op-card-header {{
   background-color: alpha({fg}, 0.07);
   border-bottom: 1px solid alpha({fg}, 0.12);
-  padding: 8px 10px 7px 10px;
+  padding: 10px 12px 8px 12px;
 }}
 
 .op-card-body {{
-  padding: 8px 10px 4px 10px;
+  padding: 10px 12px 6px 12px;
 }}
 
 .op-card-footer {{
-  padding: 4px 10px 8px 10px;
+  padding: 4px 12px 8px 12px;
 }}
 
 .op-kind {{
@@ -232,13 +232,16 @@ popover, popover.background, popover contents {{
   font-size: 11px;
   letter-spacing: 0.3px;
   color: {fg};
+  min-height: 20px;
 }}
 
 .op-preview {{
   color: {fg};
   font-family: "JetBrainsMono Nerd Font", "JetBrains Mono", monospace;
   font-size: 12px;
-  line-height: 1.35;
+  padding-left: 2px;
+  padding-right: 2px;
+  font-feature-settings: "liga" 0, "calt" 0;
 }}
 
 .op-meta, .op-chars {{
@@ -339,7 +342,10 @@ count = 3
         assert!(!css.contains("overflow"));
         assert!(css.contains(".op-search text"));
         assert!(css.contains("min-height: 28px"));
-        assert!(css.contains("line-height: 1.35"));
+        assert!(!css.contains("line-height"));
+        assert!(css.contains("min-height: 20px"));
+        assert!(css.contains("padding: 10px 12px 6px 12px"));
+        assert!(css.contains("font-feature-settings"));
     }
 
     #[test]
