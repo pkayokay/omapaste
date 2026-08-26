@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -31,7 +31,6 @@ const SIDE_MARGIN: i32 = 18;
 const SLIDE_PX: i32 = BAR_HEIGHT + 24;
 const ANIM_DURATION: f64 = 0.220;
 const CARD_DRAG_THRESHOLD_PX: i32 = 24;
-const DRAG_HIDE_DELAY: Duration = Duration::from_millis(32);
 
 const SHORTCUTS: &[(&str, &str)] = &[
     ("← →", "Select"),
@@ -54,7 +53,6 @@ struct UiState {
     anim_id: Option<glib::SourceId>,
     cards: Vec<gtk::Box>,
     target: Option<TargetWindow>,
-    drag_hide_id: Option<glib::SourceId>,
     drag_panel_hidden: bool,
 }
 
@@ -306,7 +304,6 @@ impl Overlay {
                 anim_id: None,
                 cards: Vec::new(),
                 target: None,
-                drag_hide_id: None,
                 drag_panel_hidden: false,
             }),
         });
@@ -644,32 +641,10 @@ impl Overlay {
         self.animate_slide_rc(0.0, None);
     }
 
-    fn cancel_drag_hide(&self) {
-        if let Some(id) = self.state.borrow_mut().drag_hide_id.take() {
-            id.remove();
-        }
-    }
-
-    fn schedule_drag_hide(self: &Rc<Self>) {
-        self.cancel_drag_hide();
-        let this = Rc::clone(self);
-        let id = glib::timeout_add_local(DRAG_HIDE_DELAY, move || {
-            this.state.borrow_mut().drag_hide_id = None;
-            if this.state.borrow().drag_panel_hidden {
-                return glib::ControlFlow::Break;
-            }
-            this.state.borrow_mut().drag_panel_hidden = true;
-            this.hide_now_rc();
-            glib::ControlFlow::Break
-        });
-        self.state.borrow_mut().drag_hide_id = Some(id);
-    }
-
-    fn finish_card_drag(self: &Rc<Self>, succeeded: bool) {
-        self.cancel_drag_hide();
-        let panel_hidden = self.state.borrow().drag_panel_hidden;
+    fn finish_card_drag(self: &Rc<Self>, cancelled: bool) {
+        let hidden = self.state.borrow().drag_panel_hidden;
         self.state.borrow_mut().drag_panel_hidden = false;
-        if should_reopen_after_drag(succeeded, panel_hidden) {
+        if should_reopen_after_drag(cancelled, hidden) {
             self.reopen_after_drag_rc();
         }
     }
@@ -761,21 +736,24 @@ impl Overlay {
             let this = Rc::clone(self);
             let clip_for_begin = clip.clone();
             drag_source.connect_drag_begin(move |_, _| {
-                this.state.borrow_mut().drag_panel_hidden = false;
                 this.select(index, false);
                 this.copy_clip(&clip_for_begin);
-                this.schedule_drag_hide();
+                this.state.borrow_mut().drag_panel_hidden = true;
+                // Unmap the fullscreen layer-shell surface so drops reach apps
+                // below. Sliding the bar off-screen is not enough — the overlay
+                // still intercepts the drag.
+                this.hide_now_rc();
             });
 
             let this = Rc::clone(self);
             drag_source.connect_drag_cancel(move |_, _, _| {
-                this.finish_card_drag(false);
+                this.finish_card_drag(true);
                 false
             });
 
             let this = Rc::clone(self);
-            drag_source.connect_drag_end(move |_, drag, _| {
-                this.finish_card_drag(drag_drop_succeeded(drag.selected_action()));
+            drag_source.connect_drag_end(move |_, _, _| {
+                this.finish_card_drag(false);
             });
 
             card.add_controller(drag_source);
@@ -1168,6 +1146,13 @@ struct ClipDragPayload {
     mime: String,
     bytes: Vec<u8>,
     is_text: bool,
+    drag_path: Option<PathBuf>,
+}
+
+fn image_drag_png_path(bytes: &[u8], digest: &str) -> Option<PathBuf> {
+    let path = std::env::temp_dir().join(format!("omapaste-drag-{digest}.png"));
+    std::fs::write(&path, bytes).ok()?;
+    Some(path)
 }
 
 fn clip_drag_payload(
@@ -1177,10 +1162,14 @@ fn clip_drag_payload(
     if clip.kind == "image" {
         let path = clip.image_path.as_ref()?;
         let payload = read_image(Path::new(path))?;
+        let mime = clip.mime.clone();
+        let digest = content_hash("image", &mime, &payload);
+        let drag_path = image_drag_png_path(&payload, &digest);
         Some(ClipDragPayload {
-            mime: clip.mime.clone(),
+            mime,
             bytes: payload,
             is_text: false,
+            drag_path,
         })
     } else {
         let text = clip.text.as_ref()?;
@@ -1188,6 +1177,7 @@ fn clip_drag_payload(
             mime: "text/plain;charset=utf-8".into(),
             bytes: text.as_bytes().to_vec(),
             is_text: true,
+            drag_path: None,
         })
     }
 }
@@ -1207,16 +1197,52 @@ fn clip_drag_provider(payload: &ClipDragPayload) -> gdk::ContentProvider {
         gdk::ContentProvider::new_union(&providers)
     } else {
         let bytes = glib::Bytes::from(&payload.bytes[..]);
-        gdk::ContentProvider::for_bytes(&payload.mime, &bytes)
+        let mut providers = Vec::new();
+        if let Some(ref path) = payload.drag_path {
+            let file = gio::File::for_path(path);
+            providers.push(gdk::ContentProvider::for_value(&file.to_value()));
+            let uri_list = format!("{}\r\n", file.uri());
+            providers.push(gdk::ContentProvider::for_bytes(
+                "text/uri-list",
+                &glib::Bytes::from(uri_list.as_bytes()),
+            ));
+        }
+        providers.push(gdk::ContentProvider::for_bytes("image/png", &bytes));
+        if payload.mime != "image/png" {
+            providers.push(gdk::ContentProvider::for_bytes(&payload.mime, &bytes));
+        }
+        if let Ok(pixbuf) =
+            gdk_pixbuf::Pixbuf::from_read(std::io::Cursor::new(payload.bytes.clone()))
+        {
+            let texture = gdk::Texture::for_pixbuf(&pixbuf);
+            providers.push(gdk::ContentProvider::for_value(&texture.to_value()));
+        }
+        if providers.len() == 1 {
+            providers.into_iter().next().unwrap()
+        } else {
+            gdk::ContentProvider::new_union(&providers)
+        }
     }
 }
 
-fn should_reopen_after_drag(succeeded: bool, panel_hidden_for_drag: bool) -> bool {
-    !succeeded && panel_hidden_for_drag
+fn should_reopen_after_drag(cancelled: bool, panel_hidden: bool) -> bool {
+    cancelled && panel_hidden
 }
 
-fn drag_drop_succeeded(action: gdk::DragAction) -> bool {
-    action.contains(gdk::DragAction::COPY) || action.contains(gdk::DragAction::MOVE)
+fn image_drag_provider_parts(payload: &ClipDragPayload) -> usize {
+    debug_assert!(!payload.is_text);
+    let mut count = 0;
+    if payload.drag_path.is_some() {
+        count += 2;
+    }
+    count += 1; // image/png
+    if payload.mime != "image/png" {
+        count += 1;
+    }
+    if gdk_pixbuf::Pixbuf::from_read(std::io::Cursor::new(payload.bytes.clone())).is_ok() {
+        count += 1;
+    }
+    count
 }
 
 fn ink_gap(px: i32) -> gtk::Box {
@@ -1479,13 +1505,27 @@ mod tests {
     fn clip_drag_payload_image() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clip.png");
-        std::fs::write(&path, b"\x89PNG\r\n").unwrap();
+        let png = include_bytes!("../share/sample-images/sample-swatch.png");
+        std::fs::write(&path, png).unwrap();
         let clip = sample_clip("image", None, Some(path.as_path()));
         let payload = clip_drag_payload(&clip, |p| std::fs::read(p).ok()).unwrap();
         assert!(!payload.is_text);
         assert_eq!(payload.mime, "image/png");
-        assert_eq!(payload.bytes, b"\x89PNG\r\n");
+        assert_eq!(payload.bytes, png.as_slice());
+        assert!(payload.drag_path.as_ref().is_some_and(|p| p.exists()));
         assert_eq!(text_drag_mime_types().len(), 2);
+        assert_eq!(image_drag_provider_parts(&payload), 4);
+    }
+
+    #[test]
+    fn image_drag_provider_falls_back_without_temp_file() {
+        let payload = ClipDragPayload {
+            mime: "image/png".into(),
+            bytes: b"not-a-png".to_vec(),
+            is_text: false,
+            drag_path: None,
+        };
+        assert_eq!(image_drag_provider_parts(&payload), 1);
     }
 
     #[test]
@@ -1501,13 +1541,6 @@ mod tests {
     }
 
     #[test]
-    fn drag_drop_succeeded_on_copy_or_move() {
-        assert!(drag_drop_succeeded(gdk::DragAction::COPY));
-        assert!(drag_drop_succeeded(gdk::DragAction::MOVE));
-        assert!(!drag_drop_succeeded(gdk::DragAction::empty()));
-    }
-
-    #[test]
     fn text_drag_offers_plain_and_utf8_mimes() {
         assert_eq!(
             text_drag_mime_types(),
@@ -1516,21 +1549,16 @@ mod tests {
     }
 
     #[test]
-    fn reopen_after_drag_only_when_drop_failed_and_panel_hid() {
-        assert!(!should_reopen_after_drag(true, true));
-        assert!(!should_reopen_after_drag(true, false));
+    fn reopen_after_drag_only_on_cancel_when_panel_was_hidden() {
+        assert!(!should_reopen_after_drag(false, true));
         assert!(!should_reopen_after_drag(false, false));
-        assert!(should_reopen_after_drag(false, true));
+        assert!(!should_reopen_after_drag(true, false));
+        assert!(should_reopen_after_drag(true, true));
     }
 
     #[test]
     fn card_drag_threshold_is_above_the_gtk_default() {
         assert!(CARD_DRAG_THRESHOLD_PX >= 20);
-    }
-
-    #[test]
-    fn drag_hide_is_deferred_so_the_compositor_can_start_the_drag() {
-        assert!(DRAG_HIDE_DELAY >= Duration::from_millis(16));
     }
 
     #[test]
