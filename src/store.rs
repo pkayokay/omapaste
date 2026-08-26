@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 
 pub const DEFAULT_KEEP: &str = "1d";
 
-/// Text-only samples for a brand-new history database.
+/// Sample clips for a brand-new history database.
 pub const SEED_CLIPS: &[(&str, &str)] = &[
     (
         "fn greet(name: &str)\n  -> String {\n  format!(\"hi {name}\")\n}",
@@ -17,10 +17,17 @@ pub const SEED_CLIPS: &[(&str, &str)] = &[
         "forever",
     ),
     ("https://omarchy.org", "7d"),
-    ("omarchy theme list", "7d"),
-    ("ssh git@github.com", "7d"),
     ("Type to search.\nCtrl+K cycles keep\ntime.", "forever"),
     (crate::paths::ISSUES_URL, "forever"),
+];
+
+/// PNG payloads shipped in `share/sample-images/` for first-run seeding.
+pub const SEED_IMAGES: &[(&str, &[u8])] = &[
+    ("7d", include_bytes!("../share/sample-images/sample-red.png")),
+    (
+        "forever",
+        include_bytes!("../share/sample-images/sample-blue.png"),
+    ),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -374,9 +381,11 @@ impl Store {
             .query_row("SELECT COUNT(*) FROM clips", [], |r| r.get(0))
     }
 
-    pub fn seed(&self) -> rusqlite::Result<()> {
+    pub fn seed(&self, images_dir: &Path) -> rusqlite::Result<()> {
+        std::fs::create_dir_all(images_dir).ok();
         let now = now_secs();
-        for (i, &(text, keep)) in SEED_CLIPS.iter().enumerate() {
+        let mut order = 0i64;
+        for &(text, keep) in SEED_CLIPS {
             self.add(
                 "text",
                 "text/plain",
@@ -386,8 +395,30 @@ impl Store {
                 None,
                 keep,
                 200,
-                Some(now - i as i64),
+                Some(now - order),
             )?;
+            order += 1;
+        }
+        for &(keep, payload) in SEED_IMAGES {
+            let mime = "image/png";
+            let digest = content_hash("image", mime, payload);
+            let image_path = images_dir.join(format!("{digest}.bin"));
+            if !image_path.exists() {
+                std::fs::write(&image_path, payload)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            }
+            self.add(
+                "image",
+                mime,
+                payload,
+                None,
+                "Image",
+                Some(image_path.to_str().unwrap_or_default()),
+                keep,
+                200,
+                Some(now - order),
+            )?;
+            order += 1;
         }
         Ok(())
     }
@@ -639,13 +670,23 @@ mod tests {
     }
 
     #[test]
-    fn seed_inserts_text_samples() {
-        let (_d, store) = tmp_store();
+    fn seed_inserts_text_and_image_samples() {
+        let (dir, store) = tmp_store();
+        let images = dir.path().join("images");
         assert_eq!(store.count().unwrap(), 0);
-        store.seed().unwrap();
+        store.seed(&images).unwrap();
         let clips = store.list("", None).unwrap();
-        assert_eq!(clips.len(), SEED_CLIPS.len());
-        assert!(clips.iter().all(|c| c.kind == "text"));
+        assert_eq!(clips.len(), SEED_CLIPS.len() + SEED_IMAGES.len());
+        assert!(clips.iter().any(|c| c.kind == "text"));
+        assert_eq!(
+            clips.iter().filter(|c| c.kind == "text").count(),
+            SEED_CLIPS.len()
+        );
+        assert!(clips.iter().any(|c| c.kind == "image"));
+        assert_eq!(
+            clips.iter().filter(|c| c.kind == "image").count(),
+            SEED_IMAGES.len()
+        );
         assert_eq!(clips[0].text.as_deref(), Some(SEED_CLIPS[0].0));
         assert!(clips
             .iter()
@@ -653,8 +694,17 @@ mod tests {
         assert!(clips
             .iter()
             .any(|c| c.text.as_deref() == Some(crate::paths::ISSUES_URL)));
-        store.seed().unwrap();
-        assert_eq!(store.count().unwrap(), SEED_CLIPS.len() as i64);
+        let image = clips.iter().find(|c| c.kind == "image").unwrap();
+        assert_eq!(image.mime, "image/png");
+        assert!(image
+            .image_path
+            .as_ref()
+            .is_some_and(|p| Path::new(p).exists()));
+        store.seed(&images).unwrap();
+        assert_eq!(
+            store.count().unwrap(),
+            (SEED_CLIPS.len() + SEED_IMAGES.len()) as i64
+        );
     }
 
     fn sample_clip(kind: &str, text: Option<&str>, bytes: i64, keep: &str) -> Clip {
@@ -882,8 +932,8 @@ mod tests {
 
     #[test]
     fn seed_keep_mix() {
-        let (_d, store) = tmp_store();
-        store.seed().unwrap();
+        let (dir, store) = tmp_store();
+        store.seed(&dir.path().join("images")).unwrap();
         let clips = store.list("", None).unwrap();
         assert!(clips.iter().any(|c| c.keep_preset == "forever"));
         assert!(clips.iter().any(|c| c.keep_preset == "7d"));

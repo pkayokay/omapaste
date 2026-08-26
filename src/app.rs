@@ -44,7 +44,7 @@ pub fn run(startup_command: &str) -> glib::ExitCode {
                 }
             };
             if fresh {
-                if let Err(err) = store.seed() {
+                if let Err(err) = store.seed(&images_dir()) {
                     log::warn!("failed to seed sample clips: {err}");
                 }
             }

@@ -36,6 +36,8 @@ rm -rf "$DEST/omapaste"
 cp -a "$SRC/LICENSE" "$SRC/README.md" "$DEST/"
 install -Dm644 "$SRC/share/omapaste.desktop" "$APP/omapaste.desktop"
 install -Dm644 "$SRC/share/omapaste.svg" "$ICON/omapaste.svg"
+mkdir -p "$DEST/sample-images"
+cp -a "$SRC/share/sample-images/." "$DEST/sample-images/"
 
 echo "Building omapaste (release)..."
 cargo build --release --manifest-path "$SRC/Cargo.toml"

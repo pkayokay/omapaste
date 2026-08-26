@@ -1505,7 +1505,7 @@ mod tests {
     fn clip_drag_payload_image() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clip.png");
-        let png = include_bytes!("../share/sample-images/sample-swatch.png");
+        let png = include_bytes!("../share/sample-images/sample-red.png");
         std::fs::write(&path, png).unwrap();
         let clip = sample_clip("image", None, Some(path.as_path()));
         let payload = clip_drag_payload(&clip, |p| std::fs::read(p).ok()).unwrap();
