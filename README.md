@@ -36,6 +36,36 @@ MIT licensed. Source and issue tracker: https://github.com/pkayokay/omapaste
 
 ## Install
 
+### Omarchy plugin (Quattro)
+
+The repo is also an Omarchy shell plugin (`io.github.pkayokay.omapaste`). Enabling it starts the GTK daemon from the shell and lets you summon the bar with `omarchy-shell shell summon io.github.pkayokay.omapaste '{}'`.
+
+You still need the `omapaste` binary on `PATH` — `omarchy plugin add` only clones this repo; it does not build Rust.
+
+```bash
+git clone https://github.com/pkayokay/omapaste.git
+cd omapaste
+./install.sh --hypr          # builds binary, Super+Shift+V, Hyprland autostart
+omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
+```
+
+If the binary is already installed:
+
+```bash
+omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
+```
+
+Remove the plugin listing (does not uninstall the binary or Hyprland bind):
+
+```bash
+omarchy plugin remove io.github.pkayokay.omapaste
+omapaste quit                # stop the daemon if it is still running
+```
+
+This plugin runs unsandboxed inside `omarchy-shell` and shells out to `omapaste`. History stays local in SQLite. Super+Ctrl+V remains Omarchy’s built-in clipboard overlay.
+
+### From source only
+
 ```bash
 git clone https://github.com/pkayokay/omapaste.git
 cd omapaste

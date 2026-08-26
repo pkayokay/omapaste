@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.pkayokay.omapaste",
+  "name": "Omapaste",
+  "version": "0.1.0",
+  "author": "Paul Kim",
+  "license": "MIT",
+  "description": "Paste-style clipboard history bar for Omarchy: bottom card timeline, keep times, and paste into the last focused app. Wraps the omapaste GTK daemon.",
+  "kinds": ["service", "overlay"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "overlay": "Overlay.qml"
+  }
+}
