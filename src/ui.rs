@@ -13,18 +13,19 @@ use gtk4_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use crate::config::Config;
 use crate::paste::{copy_image, copy_text, paste_now, TargetWindow};
 use crate::paths::ISSUES_URL;
-use crate::store::{content_hash, next_keep, Clip, Store};
+use crate::store::{content_hash, make_preview, next_keep, Clip, Store};
 use crate::theme::{css_for, load_theme};
 
-const BAR_HEIGHT: i32 = 304;
+const BAR_HEIGHT: i32 = 356;
 const CARD_WIDTH: i32 = 210;
-const CARD_HEIGHT: i32 = 236;
+const CARD_HEIGHT: i32 = 280;
 const CARD_BORDER: i32 = 1;
 const CARD_BODY_PAD_X: i32 = 12;
 /// 12px JetBrains Mono is ~7px/cell; 1.25 scale hinting can be ~8px.
 const PREVIEW_CELL_PX: i32 = 8;
 const PREVIEW_INNER_WIDTH: i32 = CARD_WIDTH - 2 * CARD_BORDER - 2 * CARD_BODY_PAD_X;
 const PREVIEW_MAX_CHARS: i32 = PREVIEW_INNER_WIDTH / PREVIEW_CELL_PX;
+const PREVIEW_LINES: i32 = 7;
 const VISIBLE_MARGIN: i32 = 14;
 const SIDE_MARGIN: i32 = 18;
 const SLIDE_PX: i32 = BAR_HEIGHT + 24;
@@ -192,7 +193,7 @@ impl Overlay {
         let scroller = gtk::ScrolledWindow::new();
         scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
         scroller.set_hexpand(true);
-        scroller.set_size_request(-1, CARD_HEIGHT + 8);
+        scroller.set_size_request(-1, CARD_HEIGHT + 16);
         let card_box = gtk::Box::new(Orientation::Horizontal, 10);
         card_box.set_halign(Align::Start);
         card_box.set_valign(Align::Center);
@@ -970,24 +971,26 @@ fn clip_card(clip: &Clip) -> gtk::Box {
     body.add_css_class("op-card-body");
     body.set_vexpand(true);
     body.set_hexpand(true);
-    body.set_overflow(Overflow::Visible);
+    // Keep preview ink out of the footer; horizontal clip is avoided via width_request.
+    body.set_overflow(Overflow::Hidden);
     if clip.kind == "image" {
         if let Some(ref path) = clip.image_path {
             body.append(&image_preview(path));
         }
     } else {
-        let text = clip.text.clone().unwrap_or_else(|| clip.preview.clone());
+        // Full clip text can wrap past the tile and shove the footer off-card.
+        let raw = clip.text.as_deref().unwrap_or(clip.preview.as_str());
+        let text = make_preview(raw, (PREVIEW_MAX_CHARS * PREVIEW_LINES) as usize);
         body.append(&ink_gap(4));
         let label = gtk::Label::new(Some(&text));
         label.set_xalign(0.0);
-        // Don't vexpand or yalign 1.0 would sit the preview on the card bottom.
-        label.set_yalign(1.0);
+        label.set_yalign(0.0);
         label.set_valign(Align::Start);
         label.set_wrap(true);
         label.set_wrap_mode(pango::WrapMode::WordChar);
         label.set_natural_wrap_mode(gtk::NaturalWrapMode::Word);
         label.set_ellipsize(pango::EllipsizeMode::End);
-        label.set_lines(8);
+        label.set_lines(PREVIEW_LINES);
         label.add_css_class("op-preview");
         // Wrap to the padded card in pixels. A ch-width request is wider than
         // 210px here, so Overflow::Hidden was shaving trailing glyphs.
@@ -1002,6 +1005,7 @@ fn clip_card(clip: &Clip) -> gtk::Box {
 
     let footer = gtk::Box::new(Orientation::Horizontal, 0);
     footer.add_css_class("op-card-footer");
+    footer.set_vexpand(false);
     let chars = gtk::Label::new(Some(&clip.format_chars()));
     chars.set_xalign(0.5);
     chars.add_css_class("op-chars");
@@ -1271,13 +1275,26 @@ mod tests {
         assert_eq!(label.width_request(), PREVIEW_INNER_WIDTH);
         assert_eq!(label.natural_wrap_mode(), gtk::NaturalWrapMode::Word);
         assert_eq!(label.overflow(), Overflow::Visible);
-        assert_eq!(label.yalign(), 1.0);
+        assert_eq!(label.yalign(), 0.0);
         assert!(!label.vexpands());
+        assert_eq!(label.lines(), PREVIEW_LINES);
         let kind = find_css(card.upcast_ref(), "op-kind").expect("kind label");
         let kind = kind.downcast::<gtk::Label>().expect("kind is a label");
         assert_eq!(kind.text().as_str(), "Text");
         assert_eq!(kind.overflow(), Overflow::Visible);
         assert_eq!(card.overflow(), Overflow::Visible);
+        assert!(
+            find_css(card.upcast_ref(), "op-chars").is_some(),
+            "footer with char count must stay on the card"
+        );
+    }
+
+    #[test]
+    fn card_preview_text_fits_the_tile() {
+        let long = "word ".repeat(200);
+        let shown = make_preview(&long, (PREVIEW_MAX_CHARS * PREVIEW_LINES) as usize);
+        assert!(shown.chars().count() <= (PREVIEW_MAX_CHARS * PREVIEW_LINES) as usize);
+        assert!(shown.ends_with('…'), "{shown}");
     }
 
     fn find_css(widget: &gtk::Widget, class: &str) -> Option<gtk::Widget> {

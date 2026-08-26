@@ -108,7 +108,7 @@ window.omapaste {{
   border-radius: 0;
   border: 1px solid alpha({fg}, 0.10);
   padding: 12px 16px 12px 16px;
-  min-height: 292px;
+  min-height: 344px;
 }}
 
 .op-title {{
@@ -220,11 +220,11 @@ popover, popover.background, popover contents {{
 }}
 
 .op-card-body {{
-  padding: 10px 12px 6px 12px;
+  padding: 10px 12px 8px 12px;
 }}
 
 .op-card-footer {{
-  padding: 4px 12px 8px 12px;
+  padding: 8px 12px 14px 12px;
 }}
 
 .op-kind {{
@@ -343,7 +343,7 @@ count = 3
         assert!(css.contains("min-height: 28px"));
         assert!(!css.contains("line-height"));
         assert!(css.contains("padding: 8px 12px 8px 12px"));
-        assert!(css.contains("padding: 10px 12px 6px 12px"));
+        assert!(css.contains("padding: 10px 12px 8px 12px"));
         assert!(css.contains("font-feature-settings"));
     }
 
