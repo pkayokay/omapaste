@@ -102,6 +102,11 @@ window.omapaste {{
   background-color: transparent;
 }}
 
+.op-dismiss {{
+  /* Opaque enough to receive input; still invisible in practice. */
+  background-color: alpha(#000000, 0.01);
+}}
+
 .op-bar {{
   background-color: alpha({bg}, 0.96);
   color: {fg};
@@ -342,6 +347,7 @@ count = 3
         assert!(css.contains(".op-search text"));
         assert!(css.contains("min-height: 28px"));
         assert!(!css.contains("line-height"));
+        assert!(css.contains(".op-dismiss"));
         assert!(css.contains("padding: 8px 12px 8px 12px"));
         assert!(css.contains("padding: 10px 12px 8px 12px"));
         assert!(css.contains("font-feature-settings"));

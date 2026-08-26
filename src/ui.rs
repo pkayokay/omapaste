@@ -91,23 +91,29 @@ impl Overlay {
         window.set_overflow(Overflow::Hidden);
 
         let width = output_width();
-        window.set_default_size(width, BAR_HEIGHT);
-        window.set_size_request(width, BAR_HEIGHT);
-
+        let (out_w, out_h) = output_size();
         let layer_shell = gtk4_layer_shell::is_supported();
         if layer_shell {
             window.init_layer_shell();
             window.set_namespace(Some("omapaste"));
             window.set_layer(Layer::Overlay);
+            // Bottom/left/right only: height comes from our size request so the
+            // surface can extend over the top bar's exclusive zone. Anchoring
+            // Top as well lets the compositor inset us below that bar, and
+            // clicks on it never reach our dismiss catcher.
+            window.set_anchor(Edge::Top, false);
             window.set_anchor(Edge::Bottom, true);
             window.set_anchor(Edge::Left, true);
             window.set_anchor(Edge::Right, true);
-            window.set_anchor(Edge::Top, false);
             window.set_exclusive_zone(0);
-            window.set_margin(Edge::Left, SIDE_MARGIN);
-            window.set_margin(Edge::Right, SIDE_MARGIN);
-            window.set_margin(Edge::Bottom, VISIBLE_MARGIN);
             window.set_keyboard_mode(KeyboardMode::None);
+            // Full monitor size so the dismiss region covers the desktop and
+            // the Omarchy top bar; the clip bar still sits at the bottom.
+            window.set_default_size(out_w, out_h);
+            window.set_size_request(out_w, out_h);
+        } else {
+            window.set_default_size(width, BAR_HEIGHT);
+            window.set_size_request(width, BAR_HEIGHT);
         }
 
         let css = gtk::CssProvider::new();
@@ -213,20 +219,53 @@ impl Overlay {
 
         bar.append(&header);
         bar.append(&stack);
-        bar.set_size_request(width, BAR_HEIGHT);
         bar.set_valign(Align::Start);
         bar.set_vexpand(false);
         bar.set_margin_top(SLIDE_PX);
 
         let stage = gtk::Box::new(Orientation::Horizontal, 0);
-        stage.set_size_request(width, BAR_HEIGHT);
         let clipper = gtk::Overlay::new();
         clipper.set_overflow(Overflow::Hidden);
         clipper.set_hexpand(true);
-        clipper.set_size_request(width, BAR_HEIGHT);
+        clipper.set_vexpand(false);
         clipper.set_child(Some(&stage));
         clipper.add_overlay(&bar);
-        window.set_child(Some(&clipper));
+
+        let dismiss = if layer_shell {
+            // Fullscreen dismiss under a bottom-anchored bar overlay. Overlay
+            // children get pointer events in their area; the rest hits dismiss.
+            clipper.set_margin_start(SIDE_MARGIN);
+            clipper.set_margin_end(SIDE_MARGIN);
+            clipper.set_margin_bottom(VISIBLE_MARGIN);
+            clipper.set_halign(Align::Fill);
+            clipper.set_valign(Align::End);
+            bar.set_size_request(-1, BAR_HEIGHT);
+            stage.set_size_request(-1, BAR_HEIGHT);
+            clipper.set_size_request(-1, BAR_HEIGHT);
+
+            let dismiss = gtk::Box::new(Orientation::Vertical, 0);
+            dismiss.add_css_class("op-dismiss");
+            dismiss.set_hexpand(true);
+            dismiss.set_vexpand(true);
+            dismiss.set_halign(Align::Fill);
+            dismiss.set_valign(Align::Fill);
+            dismiss.set_can_focus(false);
+
+            let root = gtk::Overlay::new();
+            root.set_hexpand(true);
+            root.set_vexpand(true);
+            root.set_size_request(out_w, out_h);
+            root.set_child(Some(&dismiss));
+            root.add_overlay(&clipper);
+            window.set_child(Some(&root));
+            Some(dismiss)
+        } else {
+            bar.set_size_request(width, BAR_HEIGHT);
+            stage.set_size_request(width, BAR_HEIGHT);
+            clipper.set_size_request(width, BAR_HEIGHT);
+            window.set_child(Some(&clipper));
+            None
+        };
 
         let ov = Rc::new(Self {
             window: window.clone(),
@@ -268,6 +307,33 @@ impl Overlay {
                 o.hide_rc();
                 glib::Propagation::Stop
             });
+        }
+        if layer_shell {
+            // Transparent surfaces often shrink the input region to opaque ink only.
+            // Keep the whole layer interactive so outside clicks reach us.
+            {
+                let win = ov.window.clone();
+                ov.window.connect_map(move |_| {
+                    let Some(surface) = win.surface() else {
+                        return;
+                    };
+                    surface.set_input_region(None);
+                    surface.connect_layout(move |surface, _, _| {
+                        surface.set_input_region(None);
+                    });
+                });
+            }
+            // Clicks on the expanding dismiss region close the bar; clicks on the
+            // bar strip never hit this widget, so they stay interactive.
+            if let Some(dismiss) = dismiss {
+                let o = ov.clone();
+                let click = gtk::GestureClick::new();
+                click.set_button(0);
+                click.connect_pressed(move |_, _, _, _| {
+                    o.hide_rc();
+                });
+                dismiss.add_controller(click);
+            }
         }
         {
             let o = ov.clone();
@@ -331,11 +397,23 @@ impl Overlay {
 
     fn sync_width(&self) {
         let width = output_width();
-        self.window.set_default_size(width, BAR_HEIGHT);
-        self.window.set_size_request(width, BAR_HEIGHT);
-        self.bar.set_size_request(width, BAR_HEIGHT);
-        self.stage.set_size_request(width, BAR_HEIGHT);
-        self.clipper.set_size_request(width, BAR_HEIGHT);
+        let (out_w, out_h) = output_size();
+        if self.layer_shell {
+            self.window.set_default_size(out_w, out_h);
+            self.window.set_size_request(out_w, out_h);
+            self.bar.set_size_request(-1, BAR_HEIGHT);
+            self.stage.set_size_request(-1, BAR_HEIGHT);
+            self.clipper.set_size_request(-1, BAR_HEIGHT);
+            if let Some(child) = self.window.child() {
+                child.set_size_request(out_w, out_h);
+            }
+        } else {
+            self.window.set_default_size(width, BAR_HEIGHT);
+            self.window.set_size_request(width, BAR_HEIGHT);
+            self.bar.set_size_request(width, BAR_HEIGHT);
+            self.stage.set_size_request(width, BAR_HEIGHT);
+            self.clipper.set_size_request(width, BAR_HEIGHT);
+        }
     }
 
     fn watch_output(self: &Rc<Self>) {
@@ -406,6 +484,17 @@ impl Overlay {
         }
         self.window.set_visible(true);
         self.window.present();
+        if self.layer_shell {
+            if let Some(surface) = self.window.surface() {
+                surface.set_input_region(None);
+            }
+            let win = self.window.clone();
+            glib::idle_add_local_once(move || {
+                if let Some(surface) = win.surface() {
+                    surface.set_input_region(None);
+                }
+            });
+        }
         self.animate_slide_rc(0.0, None);
         let win = self.window.clone();
         glib::idle_add_local_once(move || {
@@ -884,21 +973,33 @@ fn bar_width_for(output_px: i32) -> i32 {
     (output_px - 2 * SIDE_MARGIN).max(800)
 }
 
-fn output_width() -> i32 {
+/// True when a click in surface coords falls outside the bar strip.
+#[cfg(test)]
+fn click_is_outside_bar(x: f64, y: f64, bar_x: f64, bar_y: f64, bar_w: f64, bar_h: f64) -> bool {
+    x < bar_x || y < bar_y || x >= bar_x + bar_w || y >= bar_y + bar_h
+}
+
+/// Monitor logical size `(width, height)` for layout and dismiss hit-testing.
+fn output_size() -> (i32, i32) {
     let Some(display) = gdk::Display::default() else {
-        return 1400;
+        return (1400, 900);
     };
     let monitors = display.monitors();
     if monitors.n_items() == 0 {
-        return 1400;
+        return (1400, 900);
     }
     let Some(monitor) = monitors
         .item(0)
         .and_then(|o| o.downcast::<gdk::Monitor>().ok())
     else {
-        return 1400;
+        return (1400, 900);
     };
-    bar_width_for(monitor.geometry().width())
+    let geo = monitor.geometry();
+    (geo.width().max(800), geo.height().max(600))
+}
+
+fn output_width() -> i32 {
+    bar_width_for(output_size().0)
 }
 
 fn format_age(ts: i64) -> String {
@@ -1126,6 +1227,23 @@ mod tests {
     }
 
     #[test]
+    fn click_outside_the_bar_is_a_dismissal() {
+        let bar = (20.0, 700.0, 800.0, 300.0);
+        assert!(click_is_outside_bar(
+            400.0, 40.0, bar.0, bar.1, bar.2, bar.3
+        ));
+        assert!(click_is_outside_bar(
+            10.0, 750.0, bar.0, bar.1, bar.2, bar.3
+        ));
+        assert!(!click_is_outside_bar(
+            400.0, 850.0, bar.0, bar.1, bar.2, bar.3
+        ));
+        assert!(!click_is_outside_bar(
+            20.0, 700.0, bar.0, bar.1, bar.2, bar.3
+        ));
+    }
+
+    #[test]
     fn shortcut_table_covers_core_actions() {
         let keys: Vec<_> = SHORTCUTS.iter().map(|(k, _)| *k).collect();
         assert!(keys.contains(&"← →"));
@@ -1249,6 +1367,13 @@ mod tests {
         overlay.test_open_search();
         assert!(overlay.test_searching());
         assert!(!overlay.is_open());
+        if overlay.layer_shell {
+            let win: &gtk::Widget = overlay.window.upcast_ref();
+            assert!(
+                find_css(win, "op-dismiss").is_some(),
+                "fullscreen dismiss catcher should exist so clicks outside the bar close it"
+            );
+        }
 
         let clip = Clip {
             id: 1,
