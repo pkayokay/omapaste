@@ -1041,7 +1041,7 @@ impl Overlay {
         let searching = self.is_searching();
         let intent = key_intent(key, ctrl, searching);
         if searching {
-            return self.on_search_key(key, ctrl, intent);
+            return self.on_search_key(key, state, intent);
         }
         match intent {
             KeyIntent::Dismiss => {
@@ -1114,9 +1114,12 @@ impl Overlay {
     fn on_search_key(
         self: &Rc<Self>,
         key: gdk::Key,
-        ctrl: bool,
+        state: gdk::ModifierType,
         intent: KeyIntent,
     ) -> glib::Propagation {
+        let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
+        let alt = state.contains(gdk::ModifierType::ALT_MASK)
+            || state.contains(gdk::ModifierType::META_MASK);
         match intent {
             KeyIntent::Dismiss => {
                 self.close_search_rc();
@@ -1131,14 +1134,29 @@ impl Overlay {
                 glib::Propagation::Stop
             }
             KeyIntent::OpenSearch => glib::Propagation::Stop,
-            _ if ctrl => glib::Propagation::Proceed,
             _ => {
                 let text = self.search_query();
                 if key == gdk::Key::BackSpace {
-                    if !text.is_empty() {
-                        self.set_search_query(&search_text_pop(&text), false);
+                    let next = if ctrl {
+                        String::new()
+                    } else if alt {
+                        search_text_pop_word(&text)
+                    } else {
+                        search_text_pop(&text)
+                    };
+                    if next != text {
+                        self.set_search_query(&next, false);
                     }
                     return glib::Propagation::Stop;
+                }
+                if ctrl && key == gdk::Key::u {
+                    if !text.is_empty() {
+                        self.set_search_query("", false);
+                    }
+                    return glib::Propagation::Stop;
+                }
+                if ctrl {
+                    return glib::Propagation::Proceed;
                 }
                 if key == gdk::Key::Delete || key == gdk::Key::KP_Delete {
                     self.set_search_query(&search_text_pop(&text), false);
@@ -1165,6 +1183,20 @@ fn search_text_push(text: &str, ch: char) -> String {
 fn search_text_pop(text: &str) -> String {
     let mut chars: Vec<char> = text.chars().collect();
     chars.pop();
+    chars.into_iter().collect()
+}
+
+fn search_text_pop_word(text: &str) -> String {
+    let mut chars: Vec<char> = text.chars().collect();
+    while chars.last().is_some_and(|c| c.is_whitespace()) {
+        chars.pop();
+    }
+    while chars.last().is_some_and(|c| !c.is_whitespace()) {
+        chars.pop();
+    }
+    if chars.last().is_some_and(|c| c.is_whitespace()) {
+        chars.pop();
+    }
     chars.into_iter().collect()
 }
 
@@ -1840,6 +1872,15 @@ mod tests {
         assert_eq!(search_text_push("ab", 'c'), "abc");
         assert_eq!(search_text_pop("abc"), "ab");
         assert_eq!(search_text_pop(""), "");
+    }
+
+    #[test]
+    fn search_text_pop_word_deletes_the_previous_token() {
+        assert_eq!(search_text_pop_word("hello world"), "hello");
+        assert_eq!(search_text_pop_word("one two three"), "one two");
+        assert_eq!(search_text_pop_word("solo"), "");
+        assert_eq!(search_text_pop_word(""), "");
+        assert_eq!(search_text_pop_word("ab cd  "), "ab");
     }
 
     #[test]
