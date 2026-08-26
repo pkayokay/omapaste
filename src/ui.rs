@@ -54,6 +54,7 @@ struct UiState {
     cards: Vec<gtk::Box>,
     target: Option<TargetWindow>,
     drag_panel_hidden: bool,
+    search_blink_id: Option<glib::SourceId>,
 }
 
 pub struct Overlay {
@@ -65,7 +66,9 @@ pub struct Overlay {
     stage: gtk::Box,
     clipper: gtk::Overlay,
     brand: gtk::Box,
-    search: gtk::Entry,
+    search: gtk::Box,
+    search_label: gtk::Label,
+    search_caret: gtk::Box,
     search_open_btn: gtk::Button,
     count_label: gtk::Label,
     scroller: gtk::ScrolledWindow,
@@ -156,26 +159,50 @@ impl Overlay {
         // does not park focus (and a focus ring) on the magnifying glass at open.
         search_open_btn.set_can_focus(false);
 
-        let search = gtk::Entry::new();
-        search.set_placeholder_text(Some("Search clips"));
+        let search = gtk::Box::new(Orientation::Horizontal, 6);
         search.add_css_class("op-search");
         search.set_hexpand(true);
         search.set_vexpand(false);
         search.set_valign(Align::Center);
         search.set_size_request(-1, 28);
-        search.set_icon_from_icon_name(
-            gtk::EntryIconPosition::Primary,
-            Some("system-search-symbolic"),
-        );
-        search.set_icon_from_icon_name(
-            gtk::EntryIconPosition::Secondary,
-            Some("edit-clear-symbolic"),
-        );
-        search.set_icon_tooltip_text(gtk::EntryIconPosition::Secondary, Some("Close search"));
-        // Layer-shell exclusive keyboard does not reliably keep Entry focus;
-        // query text is driven from the window key handler while search is open.
-        search.set_editable(false);
-        search.set_can_focus(false);
+
+        let search_icon = gtk::Image::new();
+        search_icon.set_icon_name(Some("system-search-symbolic"));
+        search_icon.add_css_class("op-search-icon");
+        search_icon.set_valign(Align::Center);
+
+        let search_text_row = gtk::Box::new(Orientation::Horizontal, 0);
+        search_text_row.set_hexpand(true);
+        search_text_row.set_valign(Align::Center);
+
+        let search_label = gtk::Label::new(Some("Search clips"));
+        search_label.add_css_class("op-search-text");
+        search_label.add_css_class("placeholder");
+        search_label.set_xalign(0.0);
+        search_label.set_yalign(0.5);
+        search_label.set_hexpand(false);
+        search_label.set_ellipsize(pango::EllipsizeMode::End);
+
+        let search_caret = gtk::Box::new(Orientation::Vertical, 0);
+        search_caret.add_css_class("op-search-caret");
+        search_caret.set_size_request(2, 18);
+        search_caret.set_valign(Align::Center);
+        search_caret.set_visible(false);
+
+        search_text_row.append(&search_label);
+        search_text_row.append(&search_caret);
+
+        let search_close_btn = gtk::Button::new();
+        search_close_btn.set_has_frame(false);
+        search_close_btn.set_icon_name("edit-clear-symbolic");
+        search_close_btn.add_css_class("op-icon-btn");
+        search_close_btn.set_valign(Align::Center);
+        search_close_btn.set_can_focus(false);
+        search_close_btn.set_tooltip_text(Some("Close search"));
+
+        search.append(&search_icon);
+        search.append(&search_text_row);
+        search.append(&search_close_btn);
 
         let shortcuts_btn = gtk::Button::new();
         shortcuts_btn.set_has_frame(false);
@@ -290,6 +317,8 @@ impl Overlay {
             clipper,
             brand,
             search: search.clone(),
+            search_label: search_label.clone(),
+            search_caret: search_caret.clone(),
             search_open_btn: search_open_btn.clone(),
             count_label,
             scroller: scroller.clone(),
@@ -309,6 +338,7 @@ impl Overlay {
                 cards: Vec::new(),
                 target: None,
                 drag_panel_hidden: false,
+                search_blink_id: None,
             }),
         });
         ov.sync_search_chrome();
@@ -355,23 +385,7 @@ impl Overlay {
         }
         {
             let o = ov.clone();
-            search.connect_changed(move |e| {
-                let text = e.text().to_string();
-                let mut st = o.state.borrow_mut();
-                if st.filter != text {
-                    st.filter = text;
-                    drop(st);
-                    o.apply_search_filter(false);
-                }
-            });
-        }
-        {
-            let o = ov.clone();
-            search.connect_icon_press(move |_, pos| {
-                if pos == gtk::EntryIconPosition::Secondary {
-                    o.close_search_rc();
-                }
-            });
+            search_close_btn.connect_clicked(move |_| o.close_search_rc());
         }
         {
             let pop = shortcuts.clone();
@@ -628,10 +642,23 @@ impl Overlay {
 
     fn set_search_query(&self, text: &str, reset_selection: bool) {
         self.state.borrow_mut().filter = text.to_string();
-        if self.search.text().as_str() != text {
-            self.search.set_text(text);
-        }
+        self.sync_search_display();
         self.apply_search_filter(reset_selection);
+    }
+
+    fn sync_search_display(&self) {
+        let query = self.state.borrow().filter.clone();
+        if query.is_empty() {
+            self.search_label.set_text("Search clips");
+            self.search_label.add_css_class("placeholder");
+        } else {
+            self.search_label.set_text(&query);
+            self.search_label.remove_css_class("placeholder");
+        }
+    }
+
+    fn search_query(&self) -> String {
+        self.state.borrow().filter.clone()
     }
 }
 
@@ -955,21 +982,50 @@ impl Overlay {
         self.brand.set_hexpand(!open);
     }
 
-    fn open_search(&self, prefix: &str) {
+    fn start_search_caret_blink(self: &Rc<Self>) {
+        if let Some(id) = self.state.borrow_mut().search_blink_id.take() {
+            id.remove();
+        }
+        self.search.add_css_class("op-search-active");
+        self.search_caret.set_visible(true);
+        let this = Rc::clone(self);
+        let id = glib::timeout_add_local(Duration::from_millis(530), move || {
+            if !this.is_searching() {
+                this.state.borrow_mut().search_blink_id = None;
+                return glib::ControlFlow::Break;
+            }
+            let visible = !this.search_caret.is_visible();
+            this.search_caret.set_visible(visible);
+            glib::ControlFlow::Continue
+        });
+        self.state.borrow_mut().search_blink_id = Some(id);
+    }
+
+    fn stop_search_caret_blink(&self) {
+        if let Some(id) = self.state.borrow_mut().search_blink_id.take() {
+            id.remove();
+        }
+        self.search.remove_css_class("op-search-active");
+        self.search_caret.set_visible(false);
+    }
+
+    fn open_search(self: &Rc<Self>, prefix: &str) {
         self.state.borrow_mut().search_open = true;
         self.sync_search_chrome();
-        if !prefix.is_empty() {
+        if prefix.is_empty() {
+            self.sync_search_display();
+            self.start_search_caret_blink();
+        } else {
             self.set_search_query(prefix, true);
+            self.start_search_caret_blink();
         }
     }
 
     fn close_search_rc(self: &Rc<Self>) {
-        if !self.search.text().is_empty() {
-            self.search.set_text("");
-        } else if !self.state.borrow().filter.is_empty() {
-            self.state.borrow_mut().filter.clear();
-            self.apply_search_filter(true);
+        if !self.search_query().is_empty() {
+            self.set_search_query("", true);
         }
+        self.stop_search_caret_blink();
         self.state.borrow_mut().search_open = false;
         self.sync_search_chrome();
         // Avoid window.grab_focus(): it draws a GTK focus ring around the bar.
@@ -1077,7 +1133,7 @@ impl Overlay {
             KeyIntent::OpenSearch => glib::Propagation::Stop,
             _ if ctrl => glib::Propagation::Proceed,
             _ => {
-                let text = self.search.text().to_string();
+                let text = self.search_query();
                 if key == gdk::Key::BackSpace {
                     if !text.is_empty() {
                         self.set_search_query(&search_text_pop(&text), false);
@@ -1544,7 +1600,7 @@ impl Overlay {
         self.state.borrow().clips.len()
     }
 
-    fn test_open_search(&self) {
+    fn test_open_search(self: &Rc<Self>) {
         self.open_search("");
     }
 

@@ -215,17 +215,26 @@ popover, popover.background, popover contents {{
   font-size: 13px;
 }}
 
-.op-search text {{
-  min-height: 0;
-  padding: 0;
-}}
-
-.op-search:focus {{
+.op-search-active {{
   border-color: {accent};
 }}
 
-.op-search placeholder {{
+.op-search-icon {{
+  color: alpha({fg}, 0.70);
+}}
+
+.op-search-text {{
+  font-size: 13px;
+  color: {fg};
+}}
+
+.op-search-text.placeholder {{
   color: alpha({fg}, 0.45);
+}}
+
+.op-search-caret {{
+  background-color: {accent};
+  margin-left: 1px;
 }}
 
 .op-card {{
@@ -381,7 +390,8 @@ count = 3
         assert!(css.contains("#abcdef"));
         assert!(css.contains("border-radius: 0"));
         assert!(!css.contains("overflow"));
-        assert!(css.contains(".op-search text"));
+        assert!(css.contains(".op-search-text"));
+        assert!(css.contains(".op-search-caret"));
         assert!(css.contains("min-height: 28px"));
         assert!(!css.contains("line-height"));
         assert!(css.contains(".op-dismiss"));
