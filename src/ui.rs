@@ -67,7 +67,9 @@ pub struct Overlay {
     clipper: gtk::Overlay,
     brand: gtk::Box,
     search: gtk::Box,
+    search_text_row: gtk::Box,
     search_label: gtk::Label,
+    search_placeholder: gtk::Label,
     search_caret: gtk::Box,
     search_open_btn: gtk::Button,
     count_label: gtk::Label,
@@ -175,13 +177,21 @@ impl Overlay {
         search_text_row.set_hexpand(true);
         search_text_row.set_valign(Align::Center);
 
-        let search_label = gtk::Label::new(Some("Search clips"));
+        let search_label = gtk::Label::new(None);
         search_label.add_css_class("op-search-text");
-        search_label.add_css_class("placeholder");
         search_label.set_xalign(0.0);
         search_label.set_yalign(0.5);
         search_label.set_hexpand(false);
         search_label.set_ellipsize(pango::EllipsizeMode::End);
+        search_label.set_visible(false);
+
+        let search_placeholder = gtk::Label::new(Some("Search clips"));
+        search_placeholder.add_css_class("op-search-text");
+        search_placeholder.add_css_class("placeholder");
+        search_placeholder.set_xalign(0.0);
+        search_placeholder.set_yalign(0.5);
+        search_placeholder.set_hexpand(false);
+        search_placeholder.set_ellipsize(pango::EllipsizeMode::End);
 
         let search_caret = gtk::Box::new(Orientation::Vertical, 0);
         search_caret.add_css_class("op-search-caret");
@@ -189,8 +199,9 @@ impl Overlay {
         search_caret.set_valign(Align::Center);
         search_caret.set_visible(false);
 
-        search_text_row.append(&search_label);
         search_text_row.append(&search_caret);
+        search_text_row.append(&search_placeholder);
+        search_text_row.append(&search_label);
 
         let search_close_btn = gtk::Button::new();
         search_close_btn.set_has_frame(false);
@@ -317,7 +328,9 @@ impl Overlay {
             clipper,
             brand,
             search: search.clone(),
+            search_text_row: search_text_row.clone(),
             search_label: search_label.clone(),
+            search_placeholder: search_placeholder.clone(),
             search_caret: search_caret.clone(),
             search_open_btn: search_open_btn.clone(),
             count_label,
@@ -649,11 +662,16 @@ impl Overlay {
     fn sync_search_display(&self) {
         let query = self.state.borrow().filter.clone();
         if query.is_empty() {
-            self.search_label.set_text("Search clips");
-            self.search_label.add_css_class("placeholder");
+            self.search_label.set_visible(false);
+            self.search_placeholder.set_visible(true);
+            self.search_text_row
+                .reorder_child_after(&self.search_placeholder, Some(&self.search_caret));
         } else {
             self.search_label.set_text(&query);
-            self.search_label.remove_css_class("placeholder");
+            self.search_label.set_visible(true);
+            self.search_placeholder.set_visible(false);
+            self.search_text_row
+                .reorder_child_after(&self.search_caret, Some(&self.search_label));
         }
     }
 
