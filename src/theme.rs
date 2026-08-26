@@ -216,7 +216,7 @@ popover, popover.background, popover contents {{
 .op-card-header {{
   background-color: alpha({fg}, 0.07);
   border-bottom: 1px solid alpha({fg}, 0.12);
-  padding: 10px 12px 8px 12px;
+  padding: 8px 12px 8px 12px;
 }}
 
 .op-card-body {{
@@ -232,7 +232,6 @@ popover, popover.background, popover contents {{
   font-size: 11px;
   letter-spacing: 0.3px;
   color: {fg};
-  min-height: 20px;
 }}
 
 .op-preview {{
@@ -343,7 +342,7 @@ count = 3
         assert!(css.contains(".op-search text"));
         assert!(css.contains("min-height: 28px"));
         assert!(!css.contains("line-height"));
-        assert!(css.contains("min-height: 20px"));
+        assert!(css.contains("padding: 8px 12px 8px 12px"));
         assert!(css.contains("padding: 10px 12px 6px 12px"));
         assert!(css.contains("font-feature-settings"));
     }

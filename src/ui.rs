@@ -902,12 +902,8 @@ fn clip_card(clip: &Clip) -> gtk::Box {
     let header = gtk::Box::new(Orientation::Vertical, 2);
     header.add_css_class("op-card-header");
     header.set_overflow(Overflow::Visible);
-    header.append(&ink_gap(4));
     let kind = gtk::Label::new(Some(&clip.kind_label()));
     kind.set_xalign(0.0);
-    // Extra height + yalign 1.0 keeps the T inside the label allocation.
-    kind.set_yalign(1.0);
-    kind.set_size_request(-1, 20);
     kind.add_css_class("op-kind");
     kind.set_overflow(Overflow::Visible);
     let age = gtk::Label::new(Some(&format_age(clip.last_used_at)));
@@ -1217,9 +1213,8 @@ mod tests {
         assert!(!label.vexpands());
         let kind = find_css(card.upcast_ref(), "op-kind").expect("kind label");
         let kind = kind.downcast::<gtk::Label>().expect("kind is a label");
-        assert_eq!(kind.yalign(), 1.0);
-        assert_eq!(kind.height_request(), 20);
         assert_eq!(kind.text().as_str(), "Text");
+        assert_eq!(kind.overflow(), Overflow::Visible);
         assert_eq!(card.overflow(), Overflow::Visible);
     }
 
