@@ -23,7 +23,10 @@ pub const SEED_CLIPS: &[(&str, &str)] = &[
 
 /// PNG payloads shipped in `share/sample-images/` for first-run seeding.
 pub const SEED_IMAGES: &[(&str, &[u8])] = &[
-    ("7d", include_bytes!("../share/sample-images/sample-red.png")),
+    (
+        "7d",
+        include_bytes!("../share/sample-images/sample-red.png"),
+    ),
     (
         "forever",
         include_bytes!("../share/sample-images/sample-blue.png"),

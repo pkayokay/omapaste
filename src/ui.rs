@@ -172,6 +172,10 @@ impl Overlay {
             Some("edit-clear-symbolic"),
         );
         search.set_icon_tooltip_text(gtk::EntryIconPosition::Secondary, Some("Close search"));
+        // Layer-shell exclusive keyboard does not reliably keep Entry focus;
+        // query text is driven from the window key handler while search is open.
+        search.set_editable(false);
+        search.set_can_focus(false);
 
         let shortcuts_btn = gtk::Button::new();
         shortcuts_btn.set_has_frame(false);
@@ -352,9 +356,13 @@ impl Overlay {
         {
             let o = ov.clone();
             search.connect_changed(move |e| {
-                o.state.borrow_mut().filter = e.text().to_string();
-                o.state.borrow_mut().selected = 0;
-                o.refresh_rc(false);
+                let text = e.text().to_string();
+                let mut st = o.state.borrow_mut();
+                if st.filter != text {
+                    st.filter = text;
+                    drop(st);
+                    o.apply_search_filter(false);
+                }
             });
         }
         {
@@ -375,13 +383,6 @@ impl Overlay {
             let o = ov.clone();
             keys.connect_key_pressed(move |_, key, _, state| o.on_key(key, state));
             ov.window.add_controller(keys);
-        }
-        {
-            let keys = gtk::EventControllerKey::new();
-            keys.set_propagation_phase(gtk::PropagationPhase::Capture);
-            let o = ov.clone();
-            keys.connect_key_pressed(move |_, key, _, state| o.on_key(key, state));
-            ov.search.add_controller(keys);
         }
         let scroll = gtk::EventControllerScroll::new(
             gtk::EventControllerScrollFlags::HORIZONTAL | gtk::EventControllerScrollFlags::VERTICAL,
@@ -530,7 +531,7 @@ impl Overlay {
         };
         let filter = st.filter.clone();
         drop(st);
-        let clips = self.store.list(&filter, None).unwrap_or_default();
+        let clips = self.store.list("", None).unwrap_or_default();
         let mut st = self.state.borrow_mut();
         if let Some(id) = selected_id {
             st.selected = clips.iter().position(|c| c.id == id).unwrap_or(0);
@@ -544,15 +545,14 @@ impl Overlay {
         let clips = st.clips.clone();
         drop(st);
         self.rebuild_cards(&clips, selected);
-        let total = self.store.count().unwrap_or(0);
-        let shown = clips.len();
-        if !filter.is_empty() {
-            self.count_label.set_text(&format!("{shown} / {total}"));
-        } else {
+        let total = clips.len();
+        if filter.trim().is_empty() {
             self.count_label.set_text(&format!(
-                "{shown} clip{}",
-                if shown == 1 { "" } else { "s" }
+                "{total} clip{}",
+                if total == 1 { "" } else { "s" }
             ));
+        } else {
+            self.apply_search_filter(false);
         }
     }
 
@@ -576,6 +576,62 @@ impl Overlay {
             cards.push(card);
         }
         self.state.borrow_mut().cards = cards;
+    }
+
+    fn apply_search_filter(&self, reset_selection: bool) {
+        let (filter, clips, cards, selected) = {
+            let st = self.state.borrow();
+            (
+                st.filter.clone(),
+                st.clips.clone(),
+                st.cards.clone(),
+                st.selected,
+            )
+        };
+        let visible = visible_clip_indices(&clips, &filter);
+        for (i, card) in cards.iter().enumerate() {
+            card.set_visible(visible.contains(&i));
+        }
+        let new_selected = if visible.is_empty() {
+            0
+        } else if reset_selection {
+            visible[0]
+        } else if visible.contains(&selected) {
+            selected
+        } else {
+            visible[0]
+        };
+        self.state.borrow_mut().selected = new_selected;
+        for (i, card) in cards.iter().enumerate() {
+            if i == new_selected {
+                card.add_css_class("selected");
+            } else {
+                card.remove_css_class("selected");
+            }
+        }
+        let total = clips.len();
+        let shown = visible.len();
+        if filter.trim().is_empty() {
+            self.count_label.set_text(&format!(
+                "{total} clip{}",
+                if total == 1 { "" } else { "s" }
+            ));
+        } else {
+            self.count_label.set_text(&format!("{shown} / {total}"));
+        }
+        if visible.is_empty() && !filter.trim().is_empty() {
+            self.stack.set_visible_child_name("empty");
+        } else {
+            self.stack.set_visible_child_name("clips");
+        }
+    }
+
+    fn set_search_query(&self, text: &str, reset_selection: bool) {
+        self.state.borrow_mut().filter = text.to_string();
+        if self.search.text().as_str() != text {
+            self.search.set_text(text);
+        }
+        self.apply_search_filter(reset_selection);
     }
 }
 
@@ -697,6 +753,20 @@ impl Overlay {
         glib::idle_add_local_once(move || {
             this.scroll_selected();
         });
+    }
+
+    fn move_selection(self: &Rc<Self>, delta: i32, copy: bool) {
+        let (clips, filter, selected) = {
+            let st = self.state.borrow();
+            (st.clips.clone(), st.filter.clone(), st.selected)
+        };
+        let visible = visible_clip_indices(&clips, &filter);
+        if visible.is_empty() {
+            return;
+        }
+        let pos = visible.iter().position(|&i| i == selected).unwrap_or(0);
+        let next = (pos as i32 + delta).clamp(0, visible.len() as i32 - 1) as usize;
+        self.select(visible[next], copy);
     }
 
     fn bind_card_clicks(self: &Rc<Self>) {
@@ -889,12 +959,8 @@ impl Overlay {
         self.state.borrow_mut().search_open = true;
         self.sync_search_chrome();
         if !prefix.is_empty() {
-            let mut text = self.search.text().to_string();
-            text.push_str(prefix);
-            self.search.set_text(&text);
-            self.search.set_position(-1);
+            self.set_search_query(prefix, true);
         }
-        self.search.grab_focus();
     }
 
     fn close_search_rc(self: &Rc<Self>) {
@@ -902,7 +968,7 @@ impl Overlay {
             self.search.set_text("");
         } else if !self.state.borrow().filter.is_empty() {
             self.state.borrow_mut().filter.clear();
-            self.refresh_rc(false);
+            self.apply_search_filter(true);
         }
         self.state.borrow_mut().search_open = false;
         self.sync_search_chrome();
@@ -916,7 +982,12 @@ impl Overlay {
 
     fn on_key(self: &Rc<Self>, key: gdk::Key, state: gdk::ModifierType) -> glib::Propagation {
         let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
-        match key_intent(key, ctrl, self.is_searching()) {
+        let searching = self.is_searching();
+        let intent = key_intent(key, ctrl, searching);
+        if searching {
+            return self.on_search_key(key, ctrl, intent);
+        }
+        match intent {
             KeyIntent::Dismiss => {
                 if self.shortcuts.is_visible() {
                     self.shortcuts.popdown();
@@ -932,23 +1003,30 @@ impl Overlay {
                 glib::Propagation::Stop
             }
             KeyIntent::Left => {
-                let i = self.state.borrow().selected;
-                self.select(i.saturating_sub(1), true);
+                self.move_selection(-1, true);
                 glib::Propagation::Stop
             }
             KeyIntent::Right => {
-                let i = self.state.borrow().selected;
-                self.select(i + 1, true);
+                self.move_selection(1, true);
                 glib::Propagation::Stop
             }
             KeyIntent::Home => {
-                self.select(0, true);
+                let (clips, filter) = {
+                    let st = self.state.borrow();
+                    (st.clips.clone(), st.filter.clone())
+                };
+                if let Some(&first) = visible_clip_indices(&clips, &filter).first() {
+                    self.select(first, true);
+                }
                 glib::Propagation::Stop
             }
             KeyIntent::End => {
-                let n = self.state.borrow().clips.len();
-                if n > 0 {
-                    self.select(n - 1, true);
+                let (clips, filter) = {
+                    let st = self.state.borrow();
+                    (st.clips.clone(), st.filter.clone())
+                };
+                if let Some(&last) = visible_clip_indices(&clips, &filter).last() {
+                    self.select(last, true);
                 }
                 glib::Propagation::Stop
             }
@@ -975,6 +1053,85 @@ impl Overlay {
             }
             KeyIntent::Other => glib::Propagation::Proceed,
         }
+    }
+
+    fn on_search_key(
+        self: &Rc<Self>,
+        key: gdk::Key,
+        ctrl: bool,
+        intent: KeyIntent,
+    ) -> glib::Propagation {
+        match intent {
+            KeyIntent::Dismiss => {
+                self.close_search_rc();
+                glib::Propagation::Stop
+            }
+            KeyIntent::CycleKeep if ctrl => {
+                self.cycle_keep();
+                glib::Propagation::Stop
+            }
+            KeyIntent::Paste => {
+                self.paste_selected();
+                glib::Propagation::Stop
+            }
+            KeyIntent::OpenSearch => glib::Propagation::Stop,
+            _ if ctrl => glib::Propagation::Proceed,
+            _ => {
+                let text = self.search.text().to_string();
+                if key == gdk::Key::BackSpace {
+                    if !text.is_empty() {
+                        self.set_search_query(&search_text_pop(&text), false);
+                    }
+                    return glib::Propagation::Stop;
+                }
+                if key == gdk::Key::Delete || key == gdk::Key::KP_Delete {
+                    self.set_search_query(&search_text_pop(&text), false);
+                    return glib::Propagation::Stop;
+                }
+                if let Some(ch) = key.to_unicode() {
+                    if !ch.is_control() {
+                        self.set_search_query(&search_text_push(&text, ch), false);
+                        return glib::Propagation::Stop;
+                    }
+                }
+                glib::Propagation::Proceed
+            }
+        }
+    }
+}
+
+fn search_text_push(text: &str, ch: char) -> String {
+    let mut out = text.to_string();
+    out.push(ch);
+    out
+}
+
+fn search_text_pop(text: &str) -> String {
+    let mut chars: Vec<char> = text.chars().collect();
+    chars.pop();
+    chars.into_iter().collect()
+}
+
+fn clip_matches_filter(clip: &Clip, needle: &str) -> bool {
+    clip.preview.to_lowercase().contains(needle)
+        || clip
+            .text
+            .as_deref()
+            .map(|t| t.to_lowercase().contains(needle))
+            .unwrap_or(false)
+}
+
+fn visible_clip_indices(clips: &[Clip], filter: &str) -> Vec<usize> {
+    let needle = filter.trim().to_lowercase();
+    if needle.is_empty() {
+        (0..clips.len()).collect()
+    } else {
+        clips
+            .iter()
+            .enumerate()
+            .filter(|(_, clip)| clip_matches_filter(clip, &needle))
+            .map(|(i, _)| i)
+            .collect()
     }
 }
 
@@ -1619,6 +1776,26 @@ mod tests {
         );
         assert_eq!(key_intent(gdk::Key::a, false, true), KeyIntent::Other);
         assert_eq!(key_intent(gdk::Key::a, true, false), KeyIntent::Other);
+    }
+
+    #[test]
+    fn search_text_edits_append_and_backspace() {
+        assert_eq!(search_text_push("", 'a'), "a");
+        assert_eq!(search_text_push("ab", 'c'), "abc");
+        assert_eq!(search_text_pop("abc"), "ab");
+        assert_eq!(search_text_pop(""), "");
+    }
+
+    #[test]
+    fn visible_clip_indices_match_store_search() {
+        let clips = vec![
+            sample_clip("text", Some("hello world"), None),
+            sample_clip("text", Some("goodbye"), None),
+            sample_clip("text", Some("HELLO again"), None),
+        ];
+        assert_eq!(visible_clip_indices(&clips, ""), vec![0, 1, 2]);
+        assert_eq!(visible_clip_indices(&clips, "hello"), vec![0, 2]);
+        assert_eq!(visible_clip_indices(&clips, "xyz"), Vec::<usize>::new());
     }
 
     #[test]
