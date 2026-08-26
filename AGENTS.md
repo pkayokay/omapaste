@@ -69,6 +69,7 @@ Look for panics and `Theme parser error`. Invalid GTK CSS (for example `overflow
 | XDG paths, `APP_ID`, issue URL | `src/paths.rs` |
 | D-Bus commands, prune timer, theme watch | `src/app.rs` |
 | Super+Shift+V, autostart, layer rule | `install.sh --hypr` (not `config.toml`) |
+| Omarchy Quattro plugin wrapper | `manifest.json`, `Service.qml`, `Overlay.qml` |
 
 | Path | Role |
 | --- | --- |

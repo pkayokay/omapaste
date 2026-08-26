@@ -45,9 +45,11 @@ You still need the `omapaste` binary on `PATH` — `omarchy plugin add` only clo
 ```bash
 git clone https://github.com/pkayokay/omapaste.git
 cd omapaste
-./install.sh --hypr          # builds binary, Super+Shift+V, Hyprland autostart
+./install.sh --hypr          # builds binary; opt-in Hyprland bind + autostart
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
 ```
+
+`./install.sh --hypr` is the only step that edits Hyprland config (`bindings.lua` / `autostart.lua`), and only when you pass `--hypr`. It writes `.bak.*` backups first. Plugin enable/disable alone does not touch those files.
 
 If the binary is already installed:
 
@@ -55,11 +57,12 @@ If the binary is already installed:
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
 ```
 
-Remove the plugin listing (does not uninstall the binary or Hyprland bind):
+Remove the plugin listing (does not uninstall the binary, stop the daemon, or undo Hyprland edits):
 
 ```bash
 omarchy plugin remove io.github.pkayokay.omapaste
-omapaste quit                # stop the daemon if it is still running
+omapaste quit                # stop the daemon
+# undo Super+Shift+V / autostart in ~/.config/hypr/ if you added them with --hypr
 ```
 
 This plugin runs unsandboxed inside `omarchy-shell` and shells out to `omapaste`. History stays local in SQLite. Super+Ctrl+V remains Omarchy’s built-in clipboard overlay.
