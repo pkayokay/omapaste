@@ -35,6 +35,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("← →", "Select"),
     ("Enter", "Paste"),
     ("Click", "Copy"),
+    ("Drag", "Drop to paste"),
     ("Del", "Delete"),
     ("Ctrl+K", "Keep"),
     ("Type", "Search"),
@@ -439,9 +440,7 @@ impl Overlay {
         monitors.connect_items_changed(move |list, position, _removed, added| {
             ov.sync_width();
             for i in position..position.saturating_add(added) {
-                if let Some(monitor) = list
-                    .item(i)
-                    .and_then(|o| o.downcast::<gdk::Monitor>().ok())
+                if let Some(monitor) = list.item(i).and_then(|o| o.downcast::<gdk::Monitor>().ok())
                 {
                     Self::watch_monitor(&ov, &monitor);
                 }
@@ -606,6 +605,21 @@ impl Overlay {
         }
     }
 
+    fn hide_now_rc(self: &Rc<Self>) {
+        let mapped = self.window.is_mapped();
+        if !self.state.borrow().visible && !mapped {
+            return;
+        }
+        self.stop_animation();
+        self.state.borrow_mut().visible = false;
+        self.set_slide(1.0);
+        self.shortcuts.popdown();
+        if self.layer_shell {
+            self.window.set_keyboard_mode(KeyboardMode::None);
+        }
+        self.window.set_visible(false);
+    }
+
     fn animate_slide_rc(self: &Rc<Self>, target: f64, on_done: Option<Box<dyn Fn()>>) {
         self.stop_animation();
         let start = self.state.borrow().slide;
@@ -640,6 +654,7 @@ impl Overlay {
     pub fn refresh_rc(self: &Rc<Self>, keep_selection: bool) {
         self.refresh(keep_selection);
         self.bind_card_clicks();
+        self.bind_card_drags();
         let this = Rc::clone(self);
         glib::idle_add_local_once(move || {
             this.scroll_selected();
@@ -661,6 +676,34 @@ impl Overlay {
         }
     }
 
+    fn bind_card_drags(self: &Rc<Self>) {
+        let clips = self.state.borrow().clips.clone();
+        let cards = self.state.borrow().cards.clone();
+        for (index, card) in cards.into_iter().enumerate() {
+            let Some(clip) = clips.get(index).cloned() else {
+                continue;
+            };
+            let drag_source = gtk::DragSource::new();
+            drag_source.set_actions(gdk::DragAction::COPY);
+
+            let clip_for_prepare = clip.clone();
+            drag_source.connect_prepare(move |_, _, _| {
+                let payload = clip_drag_payload(&clip_for_prepare, |p| std::fs::read(p).ok())?;
+                Some(clip_drag_provider(&payload))
+            });
+
+            let this = Rc::clone(self);
+            let clip_for_begin = clip.clone();
+            drag_source.connect_drag_begin(move |_, _| {
+                this.select(index, false);
+                this.copy_clip(&clip_for_begin);
+                this.hide_now_rc();
+            });
+
+            card.add_controller(drag_source);
+        }
+    }
+
     fn selected_clip(&self) -> Option<Clip> {
         let st = self.state.borrow();
         st.clips.get(st.selected).cloned()
@@ -670,6 +713,10 @@ impl Overlay {
         let Some(clip) = self.selected_clip() else {
             return;
         };
+        self.copy_clip(&clip);
+    }
+
+    fn copy_clip(&self, clip: &Clip) {
         if clip.kind == "image" {
             if let Some(ref path) = clip.image_path {
                 let p = Path::new(path);
@@ -1039,6 +1086,40 @@ fn format_age_at(ts: i64, now: i64) -> String {
 }
 
 /// Empty strip so glyph ink is not the first painted row of a clip box.
+struct ClipDragPayload {
+    mime: String,
+    bytes: Vec<u8>,
+}
+
+fn clip_drag_payload(
+    clip: &Clip,
+    read_image: impl FnOnce(&Path) -> Option<Vec<u8>>,
+) -> Option<ClipDragPayload> {
+    if clip.kind == "image" {
+        let path = clip.image_path.as_ref()?;
+        let payload = read_image(Path::new(path))?;
+        Some(ClipDragPayload {
+            mime: clip.mime.clone(),
+            bytes: payload,
+        })
+    } else {
+        let text = clip.text.as_ref()?;
+        Some(ClipDragPayload {
+            mime: "text/plain;charset=utf-8".into(),
+            bytes: text.as_bytes().to_vec(),
+        })
+    }
+}
+
+fn clip_drag_provider(payload: &ClipDragPayload) -> gdk::ContentProvider {
+    let bytes = glib::Bytes::from(&payload.bytes[..]);
+    gdk::ContentProvider::for_bytes(&payload.mime, &bytes)
+}
+
+fn drag_drop_succeeded(action: gdk::DragAction) -> bool {
+    action.contains(gdk::DragAction::COPY) || action.contains(gdk::DragAction::MOVE)
+}
+
 fn ink_gap(px: i32) -> gtk::Box {
     let gap = gtk::Box::new(Orientation::Horizontal, 0);
     gap.set_size_request(1, px);
@@ -1257,6 +1338,70 @@ mod tests {
         assert!(keys.contains(&"Esc"));
         assert!(keys.contains(&"Type"));
         assert!(keys.contains(&"Click"));
+        assert!(keys.contains(&"Drag"));
+    }
+
+    fn sample_clip(kind: &str, text: Option<&str>, image_path: Option<&Path>) -> Clip {
+        Clip {
+            id: 1,
+            created_at: 0,
+            last_used_at: 0,
+            keep_preset: "1d".into(),
+            keep_until: None,
+            mime: if kind == "image" {
+                "image/png".into()
+            } else {
+                "text/plain".into()
+            },
+            kind: kind.into(),
+            text: text.map(str::to_string),
+            preview: text.unwrap_or("").into(),
+            hash: "x".into(),
+            image_path: image_path.map(|p| p.display().to_string()),
+            byte_size: 0,
+        }
+    }
+
+    #[test]
+    fn clip_drag_payload_text() {
+        let clip = sample_clip("text", Some("hello drag"), None);
+        let payload = clip_drag_payload(&clip, |_| None).unwrap();
+        assert_eq!(payload.mime, "text/plain;charset=utf-8");
+        assert_eq!(payload.bytes, b"hello drag");
+        assert_eq!(
+            content_hash("text", "text/plain", &payload.bytes),
+            content_hash("text", "text/plain", b"hello drag")
+        );
+    }
+
+    #[test]
+    fn clip_drag_payload_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clip.png");
+        std::fs::write(&path, b"\x89PNG\r\n").unwrap();
+        let clip = sample_clip("image", None, Some(path.as_path()));
+        let payload = clip_drag_payload(&clip, |p| std::fs::read(p).ok()).unwrap();
+        assert_eq!(payload.mime, "image/png");
+        assert_eq!(payload.bytes, b"\x89PNG\r\n");
+    }
+
+    #[test]
+    fn clip_drag_payload_skips_missing_image() {
+        let clip = sample_clip("image", None, Some(Path::new("/no/such/file.png")));
+        assert!(clip_drag_payload(&clip, |_| None).is_none());
+    }
+
+    #[test]
+    fn clip_drag_payload_skips_text_without_body() {
+        let clip = sample_clip("text", None, None);
+        assert!(clip_drag_payload(&clip, |_| None).is_none());
+    }
+
+    #[test]
+    fn drag_drop_succeeded_on_copy_or_move() {
+        assert!(drag_drop_succeeded(gdk::DragAction::COPY));
+        assert!(drag_drop_succeeded(gdk::DragAction::MOVE));
+        assert!(!drag_drop_succeeded(gdk::DragAction::empty()));
     }
 
     #[test]
