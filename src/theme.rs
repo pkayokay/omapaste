@@ -219,6 +219,10 @@ popover, popover.background, popover contents {{
   border-color: {accent};
 }}
 
+.op-search-field {{
+  min-height: 18px;
+}}
+
 .op-search-icon {{
   color: alpha({fg}, 0.70);
 }}
@@ -226,6 +230,8 @@ popover, popover.background, popover contents {{
 .op-search-text {{
   font-size: 13px;
   color: {fg};
+  padding: 0;
+  margin: 0;
 }}
 
 .op-search-text.placeholder {{
@@ -234,7 +240,6 @@ popover, popover.background, popover contents {{
 
 .op-search-caret {{
   background-color: {accent};
-  margin-left: 1px;
 }}
 
 .op-card {{
@@ -392,6 +397,7 @@ count = 3
         assert!(!css.contains("overflow"));
         assert!(css.contains(".op-search-text"));
         assert!(css.contains(".op-search-caret"));
+        assert!(css.contains(".op-search-field"));
         assert!(css.contains("min-height: 28px"));
         assert!(!css.contains("line-height"));
         assert!(css.contains(".op-dismiss"));

@@ -31,6 +31,8 @@ const SIDE_MARGIN: i32 = 18;
 const SLIDE_PX: i32 = BAR_HEIGHT + 24;
 const ANIM_DURATION: f64 = 0.220;
 const CARD_DRAG_THRESHOLD_PX: i32 = 24;
+const SEARCH_CARET_WIDTH: i32 = 2;
+const SEARCH_CARET_GAP: i32 = 1;
 
 const SHORTCUTS: &[(&str, &str)] = &[
     ("← →", "Select"),
@@ -67,7 +69,6 @@ pub struct Overlay {
     clipper: gtk::Overlay,
     brand: gtk::Box,
     search: gtk::Box,
-    search_text_row: gtk::Box,
     search_label: gtk::Label,
     search_placeholder: gtk::Label,
     search_caret: gtk::Box,
@@ -173,35 +174,39 @@ impl Overlay {
         search_icon.add_css_class("op-search-icon");
         search_icon.set_valign(Align::Center);
 
-        let search_text_row = gtk::Box::new(Orientation::Horizontal, 0);
-        search_text_row.set_hexpand(true);
-        search_text_row.set_valign(Align::Center);
+        let search_field = gtk::Overlay::new();
+        search_field.add_css_class("op-search-field");
+        search_field.set_hexpand(true);
+        search_field.set_valign(Align::Center);
 
         let search_label = gtk::Label::new(None);
         search_label.add_css_class("op-search-text");
         search_label.set_xalign(0.0);
         search_label.set_yalign(0.5);
-        search_label.set_hexpand(false);
+        search_label.set_halign(Align::Start);
+        search_label.set_valign(Align::Center);
+        search_label.set_hexpand(true);
         search_label.set_ellipsize(pango::EllipsizeMode::End);
-        search_label.set_visible(false);
+        search_field.set_child(Some(&search_label));
 
         let search_placeholder = gtk::Label::new(Some("Search clips"));
         search_placeholder.add_css_class("op-search-text");
         search_placeholder.add_css_class("placeholder");
         search_placeholder.set_xalign(0.0);
         search_placeholder.set_yalign(0.5);
+        search_placeholder.set_halign(Align::Start);
+        search_placeholder.set_valign(Align::Center);
         search_placeholder.set_hexpand(false);
         search_placeholder.set_ellipsize(pango::EllipsizeMode::End);
+        search_field.add_overlay(&search_placeholder);
 
         let search_caret = gtk::Box::new(Orientation::Vertical, 0);
         search_caret.add_css_class("op-search-caret");
-        search_caret.set_size_request(2, 18);
+        search_caret.set_size_request(SEARCH_CARET_WIDTH, 18);
+        search_caret.set_halign(Align::Start);
         search_caret.set_valign(Align::Center);
         search_caret.set_visible(false);
-
-        search_text_row.append(&search_caret);
-        search_text_row.append(&search_placeholder);
-        search_text_row.append(&search_label);
+        search_field.add_overlay(&search_caret);
 
         let search_close_btn = gtk::Button::new();
         search_close_btn.set_has_frame(false);
@@ -212,7 +217,7 @@ impl Overlay {
         search_close_btn.set_tooltip_text(Some("Close search"));
 
         search.append(&search_icon);
-        search.append(&search_text_row);
+        search.append(&search_field);
         search.append(&search_close_btn);
 
         let shortcuts_btn = gtk::Button::new();
@@ -328,7 +333,6 @@ impl Overlay {
             clipper,
             brand,
             search: search.clone(),
-            search_text_row: search_text_row.clone(),
             search_label: search_label.clone(),
             search_placeholder: search_placeholder.clone(),
             search_caret: search_caret.clone(),
@@ -662,16 +666,16 @@ impl Overlay {
     fn sync_search_display(&self) {
         let query = self.state.borrow().filter.clone();
         if query.is_empty() {
-            self.search_label.set_visible(false);
+            self.search_label.set_text("");
             self.search_placeholder.set_visible(true);
-            self.search_text_row
-                .reorder_child_after(&self.search_placeholder, Some(&self.search_caret));
+            self.search_caret.set_margin_start(0);
+            self.search_placeholder
+                .set_margin_start(SEARCH_CARET_WIDTH + SEARCH_CARET_GAP);
         } else {
             self.search_label.set_text(&query);
-            self.search_label.set_visible(true);
             self.search_placeholder.set_visible(false);
-            self.search_text_row
-                .reorder_child_after(&self.search_caret, Some(&self.search_label));
+            let text_w = search_text_width(&self.search_label, &query);
+            self.search_caret.set_margin_start(text_w + SEARCH_CARET_GAP);
         }
     }
 
@@ -1190,6 +1194,15 @@ impl Overlay {
             }
         }
     }
+}
+
+fn search_text_width(label: &gtk::Label, text: &str) -> i32 {
+    if text.is_empty() {
+        return 0;
+    }
+    let layout = label.layout();
+    layout.set_text(text);
+    layout.pixel_size().0
 }
 
 fn search_text_push(text: &str, ch: char) -> String {
