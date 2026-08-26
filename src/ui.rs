@@ -26,6 +26,7 @@ const PREVIEW_CELL_PX: i32 = 8;
 const PREVIEW_INNER_WIDTH: i32 = CARD_WIDTH - 2 * CARD_BORDER - 2 * CARD_BODY_PAD_X;
 const PREVIEW_MAX_CHARS: i32 = PREVIEW_INNER_WIDTH / PREVIEW_CELL_PX;
 const VISIBLE_MARGIN: i32 = 14;
+const SIDE_MARGIN: i32 = 18;
 const SLIDE_PX: i32 = BAR_HEIGHT + 24;
 const ANIM_DURATION: f64 = 0.220;
 
@@ -57,6 +58,8 @@ pub struct Overlay {
     config: Config,
     on_copy: Rc<dyn Fn(&str)>,
     bar: gtk::Box,
+    stage: gtk::Box,
+    clipper: gtk::Overlay,
     brand: gtk::Box,
     search: gtk::Entry,
     search_open_btn: gtk::Button,
@@ -100,8 +103,8 @@ impl Overlay {
             window.set_anchor(Edge::Right, true);
             window.set_anchor(Edge::Top, false);
             window.set_exclusive_zone(0);
-            window.set_margin(Edge::Left, 18);
-            window.set_margin(Edge::Right, 18);
+            window.set_margin(Edge::Left, SIDE_MARGIN);
+            window.set_margin(Edge::Right, SIDE_MARGIN);
             window.set_margin(Edge::Bottom, VISIBLE_MARGIN);
             window.set_keyboard_mode(KeyboardMode::None);
         }
@@ -230,6 +233,8 @@ impl Overlay {
             config,
             on_copy,
             bar,
+            stage,
+            clipper,
             brand,
             search: search.clone(),
             search_open_btn: search_open_btn.clone(),
@@ -254,6 +259,7 @@ impl Overlay {
         });
         ov.sync_search_chrome();
         ov.apply_theme();
+        ov.watch_output();
 
         {
             let o = ov.clone();
@@ -322,6 +328,49 @@ impl Overlay {
         self.apply_theme();
     }
 
+    fn sync_width(&self) {
+        let width = output_width();
+        self.window.set_default_size(width, BAR_HEIGHT);
+        self.window.set_size_request(width, BAR_HEIGHT);
+        self.bar.set_size_request(width, BAR_HEIGHT);
+        self.stage.set_size_request(width, BAR_HEIGHT);
+        self.clipper.set_size_request(width, BAR_HEIGHT);
+    }
+
+    fn watch_output(self: &Rc<Self>) {
+        let Some(display) = gdk::Display::default() else {
+            return;
+        };
+        let monitors = display.monitors();
+        for i in 0..monitors.n_items() {
+            if let Some(monitor) = monitors
+                .item(i)
+                .and_then(|o| o.downcast::<gdk::Monitor>().ok())
+            {
+                Self::watch_monitor(self, &monitor);
+            }
+        }
+        let ov = Rc::clone(self);
+        monitors.connect_items_changed(move |list, position, _removed, added| {
+            ov.sync_width();
+            for i in position..position.saturating_add(added) {
+                if let Some(monitor) = list
+                    .item(i)
+                    .and_then(|o| o.downcast::<gdk::Monitor>().ok())
+                {
+                    Self::watch_monitor(&ov, &monitor);
+                }
+            }
+        });
+    }
+
+    fn watch_monitor(ov: &Rc<Self>, monitor: &gdk::Monitor) {
+        let o = Rc::clone(ov);
+        monitor.connect_geometry_notify(move |_| o.sync_width());
+        let o = Rc::clone(ov);
+        monitor.connect_scale_factor_notify(move |_| o.sync_width());
+    }
+
     fn apply_theme(&self) {
         let theme = load_theme();
         let extra = format!(
@@ -344,6 +393,7 @@ impl Overlay {
             st.target = target;
             st.selected = 0;
         }
+        self.sync_width();
         self.refresh_rc(false);
         let mapped = self.window.is_mapped();
         self.state.borrow_mut().visible = true;
@@ -829,6 +879,10 @@ fn select_after_delete(selected: usize, len: usize) -> usize {
     }
 }
 
+fn bar_width_for(output_px: i32) -> i32 {
+    (output_px - 2 * SIDE_MARGIN).max(800)
+}
+
 fn output_width() -> i32 {
     let Some(display) = gdk::Display::default() else {
         return 1400;
@@ -843,8 +897,7 @@ fn output_width() -> i32 {
     else {
         return 1400;
     };
-    let geo = monitor.geometry();
-    (geo.width() - 36).max(800)
+    bar_width_for(monitor.geometry().width())
 }
 
 fn format_age(ts: i64) -> String {
@@ -1057,6 +1110,15 @@ mod tests {
     fn future_timestamps_are_just_now() {
         let now = 1_700_000_000;
         assert_eq!(format_age_at(now + 60, now), "just now");
+    }
+
+    #[test]
+    fn bar_width_tracks_output_minus_side_margins() {
+        assert_eq!(bar_width_for(1280), 1280 - 2 * SIDE_MARGIN);
+        assert_eq!(bar_width_for(1920), 1920 - 2 * SIDE_MARGIN);
+        // Scale-up shrinks logical width; still follow the output.
+        assert_eq!(bar_width_for(640), 800);
+        assert_eq!(bar_width_for(800 + 2 * SIDE_MARGIN), 800);
     }
 
     #[test]
