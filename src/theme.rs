@@ -238,6 +238,7 @@ popover, popover.background, popover contents {{
   color: {fg};
   font-family: "JetBrainsMono Nerd Font", "JetBrains Mono", monospace;
   font-size: 12px;
+  line-height: 1.35;
 }}
 
 .op-meta, .op-chars {{
@@ -338,6 +339,7 @@ count = 3
         assert!(!css.contains("overflow"));
         assert!(css.contains(".op-search text"));
         assert!(css.contains("min-height: 28px"));
+        assert!(css.contains("line-height: 1.35"));
     }
 
     #[test]

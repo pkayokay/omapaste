@@ -9,24 +9,18 @@ pub const DEFAULT_KEEP: &str = "1d";
 /// Text-only samples for a brand-new history database.
 pub const SEED_CLIPS: &[(&str, &str)] = &[
     (
-        "← → select a clip. Enter pastes it into the last app. Esc closes the bar.",
-        "forever",
+        "fn greet(name: &str)\n  -> String {\n  format!(\"hi {name}\")\n}",
+        "7d",
     ),
     (
-        "Type to search, or click the magnifying glass. Ctrl+K cycles how long a clip is kept.",
+        "← → select a clip.\nEnter pastes it.\nEsc closes the bar.",
         "forever",
     ),
     ("https://omarchy.org", "7d"),
-    (crate::paths::ISSUES_URL, "forever"),
     ("omarchy theme list", "7d"),
-    (
-        "fn greet(name: &str) -> String {\n    format!(\"hello, {name}\")\n}",
-        "7d",
-    ),
-    (
-        "ssh -o StrictHostKeyChecking=accept-new git@github.com",
-        "7d",
-    ),
+    ("ssh git@github.com", "7d"),
+    ("Type to search.\nCtrl+K cycles keep\ntime.", "forever"),
+    (crate::paths::ISSUES_URL, "forever"),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

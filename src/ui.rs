@@ -19,6 +19,12 @@ use crate::theme::{css_for, load_theme};
 const BAR_HEIGHT: i32 = 304;
 const CARD_WIDTH: i32 = 210;
 const CARD_HEIGHT: i32 = 236;
+const CARD_BORDER: i32 = 1;
+const CARD_BODY_PAD_X: i32 = 10;
+/// 12px JetBrains Mono is ~7px/cell; 1.25 scale hinting can be ~8px.
+const PREVIEW_CELL_PX: i32 = 8;
+const PREVIEW_MAX_CHARS: i32 =
+    (CARD_WIDTH - 2 * CARD_BORDER - 2 * CARD_BODY_PAD_X) / PREVIEW_CELL_PX;
 const VISIBLE_MARGIN: i32 = 14;
 const SLIDE_PX: i32 = BAR_HEIGHT + 24;
 const ANIM_DURATION: f64 = 0.220;
@@ -898,7 +904,7 @@ fn clip_card(clip: &Clip) -> gtk::Box {
     let body = gtk::Box::new(Orientation::Vertical, 0);
     body.add_css_class("op-card-body");
     body.set_vexpand(true);
-    body.set_hexpand(false);
+    body.set_hexpand(true);
     if clip.kind == "image" {
         if let Some(ref path) = clip.image_path {
             body.append(&image_preview(path));
@@ -910,12 +916,14 @@ fn clip_card(clip: &Clip) -> gtk::Box {
         label.set_yalign(0.0);
         label.set_wrap(true);
         label.set_wrap_mode(pango::WrapMode::WordChar);
+        label.set_natural_wrap_mode(gtk::NaturalWrapMode::Word);
         label.set_ellipsize(pango::EllipsizeMode::End);
         label.set_lines(8);
         label.add_css_class("op-preview");
-        label.set_max_width_chars(28);
-        label.set_width_chars(28);
-        label.set_hexpand(false);
+        // Cap wrap to the padded 210px card. 28ch at this font overflows and
+        // Overflow::Hidden clips the last glyphs on each line.
+        label.set_max_width_chars(PREVIEW_MAX_CHARS);
+        label.set_hexpand(true);
         label.set_vexpand(true);
         body.append(&label);
     }
@@ -1156,5 +1164,73 @@ mod tests {
         overlay.test_open_search();
         assert!(overlay.test_searching());
         assert!(!overlay.is_open());
+
+        let clip = Clip {
+            id: 1,
+            created_at: 0,
+            last_used_at: 0,
+            keep_preset: "1d".into(),
+            keep_until: None,
+            mime: "text/plain".into(),
+            kind: "text".into(),
+            text: Some("Omarchy. Bottom-of-screen clip bar inspired by Paste for Mac".into()),
+            preview: "Omarchy. Bottom-of-screen clip bar inspired by Paste for Mac".into(),
+            hash: "x".into(),
+            image_path: None,
+            byte_size: 60,
+        };
+        let card = clip_card(&clip);
+        let preview = find_css(card.upcast_ref(), "op-preview").expect("preview label");
+        let label = preview
+            .downcast::<gtk::Label>()
+            .expect("preview is a label");
+        assert!(label.wraps());
+        assert_eq!(label.width_chars(), -1);
+        assert_eq!(label.max_width_chars(), PREVIEW_MAX_CHARS);
+        assert_eq!(label.natural_wrap_mode(), gtk::NaturalWrapMode::Word);
+    }
+
+    fn find_css(widget: &gtk::Widget, class: &str) -> Option<gtk::Widget> {
+        if widget.has_css_class(class) {
+            return Some(widget.clone());
+        }
+        let mut child = widget.first_child();
+        while let Some(c) = child {
+            if let Some(found) = find_css(&c, class) {
+                return Some(found);
+            }
+            child = c.next_sibling();
+        }
+        None
+    }
+
+    #[test]
+    fn preview_max_chars_fits_inside_the_card() {
+        let inner = CARD_WIDTH - 2 * CARD_BORDER - 2 * CARD_BODY_PAD_X;
+        assert!(PREVIEW_MAX_CHARS > 0);
+        assert!(PREVIEW_MAX_CHARS * PREVIEW_CELL_PX <= inner);
+        assert!(PREVIEW_MAX_CHARS < 28);
+    }
+
+    #[test]
+    fn seed_lines_fit_the_card_wrap() {
+        let max = PREVIEW_MAX_CHARS as usize;
+        for (text, _) in crate::store::SEED_CLIPS {
+            for line in text.lines() {
+                let n = line.chars().count();
+                if n <= max {
+                    continue;
+                }
+                for token in line.split_whitespace() {
+                    if token.chars().count() <= max {
+                        continue;
+                    }
+                    assert!(
+                        token.starts_with("http://") || token.starts_with("https://"),
+                        "seed {token:?} is longer than {max} chars and is not a URL"
+                    );
+                }
+            }
+        }
     }
 }
