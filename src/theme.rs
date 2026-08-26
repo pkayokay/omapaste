@@ -100,6 +100,21 @@ pub fn css_for(theme: &Theme) -> String {
         r#"
 window.omapaste {{
   background-color: transparent;
+  outline: none;
+  box-shadow: none;
+}}
+
+window.omapaste:focus,
+window.omapaste:focus-visible,
+window.omapaste:focus-within,
+.op-bar:focus,
+.op-bar:focus-visible,
+.op-bar:focus-within {{
+  outline: none;
+  outline-width: 0;
+  outline-offset: 0;
+  box-shadow: none;
+  border-color: alpha({fg}, 0.10);
 }}
 
 .op-dismiss {{
@@ -114,6 +129,8 @@ window.omapaste {{
   border: 1px solid alpha({fg}, 0.10);
   padding: 12px 16px 12px 16px;
   min-height: 344px;
+  outline: none;
+  box-shadow: none;
 }}
 
 .op-title {{
@@ -130,9 +147,29 @@ window.omapaste {{
   border-radius: 0;
   background-color: transparent;
   color: alpha({fg}, 0.80);
+  outline: none;
+  box-shadow: none;
 }}
 
 .op-icon-btn:hover {{
+  background-color: alpha({fg}, 0.08);
+  color: {fg};
+}}
+
+.op-icon-btn:focus,
+.op-icon-btn:focus-visible,
+.op-icon-btn:checked,
+.op-icon-btn:active {{
+  outline: none;
+  outline-width: 0;
+  box-shadow: none;
+  border: none;
+  background-color: transparent;
+  color: alpha({fg}, 0.80);
+}}
+
+.op-icon-btn:focus:hover,
+.op-icon-btn:focus-visible:hover {{
   background-color: alpha({fg}, 0.08);
   color: {fg};
 }}
@@ -348,6 +385,8 @@ count = 3
         assert!(css.contains("min-height: 28px"));
         assert!(!css.contains("line-height"));
         assert!(css.contains(".op-dismiss"));
+        assert!(css.contains(".op-bar:focus"));
+        assert!(css.contains("outline: none"));
         assert!(css.contains("padding: 8px 12px 8px 12px"));
         assert!(css.contains("padding: 10px 12px 8px 12px"));
         assert!(css.contains("font-feature-settings"));

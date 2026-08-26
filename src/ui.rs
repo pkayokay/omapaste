@@ -121,6 +121,7 @@ impl Overlay {
         bar.add_css_class("op-bar");
         bar.set_hexpand(true);
         bar.set_halign(Align::Fill);
+        bar.set_can_focus(false);
 
         let header = gtk::Box::new(Orientation::Horizontal, 10);
         header.add_css_class("op-header");
@@ -148,6 +149,9 @@ impl Overlay {
         search_open_btn.set_tooltip_text(Some("Search"));
         search_open_btn.add_css_class("op-icon-btn");
         search_open_btn.set_valign(Align::Center);
+        // Keys are handled on the window; keep icon buttons mouse-only so GTK
+        // does not park focus (and a focus ring) on the magnifying glass at open.
+        search_open_btn.set_can_focus(false);
 
         let search = gtk::Entry::new();
         search.set_placeholder_text(Some("Search clips"));
@@ -172,6 +176,7 @@ impl Overlay {
         shortcuts_btn.set_tooltip_text(Some("Shortcuts"));
         shortcuts_btn.add_css_class("op-icon-btn");
         shortcuts_btn.set_valign(Align::Center);
+        shortcuts_btn.set_can_focus(false);
         let shortcuts = shortcuts_popover();
         shortcuts.set_parent(&shortcuts_btn);
 
@@ -181,6 +186,7 @@ impl Overlay {
         issues_btn.set_tooltip_text(Some("Report an issue"));
         issues_btn.add_css_class("op-icon-btn");
         issues_btn.set_valign(Align::Center);
+        issues_btn.set_can_focus(false);
         issues_btn.connect_clicked(|_| {
             let _ = std::process::Command::new("xdg-open")
                 .arg(ISSUES_URL)
@@ -460,7 +466,7 @@ impl Overlay {
             gtk::style_context_add_provider_for_display(
                 &display,
                 &self.css,
-                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+                gtk::STYLE_PROVIDER_PRIORITY_USER,
             );
         }
     }
@@ -496,10 +502,8 @@ impl Overlay {
             });
         }
         self.animate_slide_rc(0.0, None);
-        let win = self.window.clone();
-        glib::idle_add_local_once(move || {
-            win.grab_focus();
-        });
+        // Don't grab_focus() here: it paints a GTK focus ring around the bar.
+        // Layer-shell KeyboardMode::Exclusive already delivers keys to us.
     }
 
     fn set_slide(&self, hidden: f64) {
@@ -799,7 +803,7 @@ impl Overlay {
         }
         self.state.borrow_mut().search_open = false;
         self.sync_search_chrome();
-        self.window.grab_focus();
+        // Avoid window.grab_focus(): it draws a GTK focus ring around the bar.
     }
 
     fn on_scroll(&self, dx: f64, dy: f64) {
