@@ -75,7 +75,7 @@ Look for panics and `Theme parser error`. Invalid GTK CSS (for example `overflow
 | `src/main.rs` | Entry: `--version` / `--help` / `daemon\|toggle\|show\|hide\|quit` |
 | `src/cli.rs` | Arg parsing |
 | `tests/cli.rs` | Process tests for those flags |
-| `share/` | Desktop file + SVG icon |
+| `share/` | Desktop file + SVG icon. README shot is `screenshot.png`; retake notes in `screenshot.md` |
 
 ## Runtime files
 
