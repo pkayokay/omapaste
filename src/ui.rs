@@ -30,6 +30,8 @@ const VISIBLE_MARGIN: i32 = 14;
 const SIDE_MARGIN: i32 = 18;
 const SLIDE_PX: i32 = BAR_HEIGHT + 24;
 const ANIM_DURATION: f64 = 0.220;
+const CARD_DRAG_THRESHOLD_PX: i32 = 24;
+const DRAG_HIDE_DELAY: Duration = Duration::from_millis(32);
 
 const SHORTCUTS: &[(&str, &str)] = &[
     ("← →", "Select"),
@@ -52,6 +54,8 @@ struct UiState {
     anim_id: Option<glib::SourceId>,
     cards: Vec<gtk::Box>,
     target: Option<TargetWindow>,
+    drag_hide_id: Option<glib::SourceId>,
+    drag_panel_hidden: bool,
 }
 
 pub struct Overlay {
@@ -302,6 +306,8 @@ impl Overlay {
                 anim_id: None,
                 cards: Vec::new(),
                 target: None,
+                drag_hide_id: None,
+                drag_panel_hidden: false,
             }),
         });
         ov.sync_search_chrome();
@@ -620,6 +626,63 @@ impl Overlay {
         self.window.set_visible(false);
     }
 
+    fn reopen_after_drag_rc(self: &Rc<Self>) {
+        if self.state.borrow().visible {
+            return;
+        }
+        self.sync_width();
+        self.state.borrow_mut().visible = true;
+        if self.layer_shell {
+            self.window.set_keyboard_mode(KeyboardMode::Exclusive);
+            if let Some(surface) = self.window.surface() {
+                surface.set_input_region(None);
+            }
+        }
+        self.set_slide(1.0);
+        self.window.set_visible(true);
+        self.window.present();
+        self.animate_slide_rc(0.0, None);
+    }
+
+    fn cancel_drag_hide(&self) {
+        if let Some(id) = self.state.borrow_mut().drag_hide_id.take() {
+            id.remove();
+        }
+    }
+
+    fn schedule_drag_hide(self: &Rc<Self>) {
+        self.cancel_drag_hide();
+        let this = Rc::clone(self);
+        let id = glib::timeout_add_local(DRAG_HIDE_DELAY, move || {
+            this.state.borrow_mut().drag_hide_id = None;
+            if this.state.borrow().drag_panel_hidden {
+                return glib::ControlFlow::Break;
+            }
+            this.state.borrow_mut().drag_panel_hidden = true;
+            this.hide_now_rc();
+            glib::ControlFlow::Break
+        });
+        self.state.borrow_mut().drag_hide_id = Some(id);
+    }
+
+    fn finish_card_drag(self: &Rc<Self>, succeeded: bool) {
+        self.cancel_drag_hide();
+        let panel_hidden = self.state.borrow().drag_panel_hidden;
+        self.state.borrow_mut().drag_panel_hidden = false;
+        if should_reopen_after_drag(succeeded, panel_hidden) {
+            self.reopen_after_drag_rc();
+        }
+    }
+
+    fn ensure_card_drag_threshold() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            if let Some(settings) = gtk::Settings::default() {
+                settings.set_gtk_dnd_drag_threshold(CARD_DRAG_THRESHOLD_PX);
+            }
+        });
+    }
+
     fn animate_slide_rc(self: &Rc<Self>, target: f64, on_done: Option<Box<dyn Fn()>>) {
         self.stop_animation();
         let start = self.state.borrow().slide;
@@ -677,6 +740,7 @@ impl Overlay {
     }
 
     fn bind_card_drags(self: &Rc<Self>) {
+        Self::ensure_card_drag_threshold();
         let clips = self.state.borrow().clips.clone();
         let cards = self.state.borrow().cards.clone();
         for (index, card) in cards.into_iter().enumerate() {
@@ -685,6 +749,8 @@ impl Overlay {
             };
             let drag_source = gtk::DragSource::new();
             drag_source.set_actions(gdk::DragAction::COPY);
+            drag_source.set_exclusive(true);
+            drag_source.set_touch_only(false);
 
             let clip_for_prepare = clip.clone();
             drag_source.connect_prepare(move |_, _, _| {
@@ -695,9 +761,21 @@ impl Overlay {
             let this = Rc::clone(self);
             let clip_for_begin = clip.clone();
             drag_source.connect_drag_begin(move |_, _| {
+                this.state.borrow_mut().drag_panel_hidden = false;
                 this.select(index, false);
                 this.copy_clip(&clip_for_begin);
-                this.hide_now_rc();
+                this.schedule_drag_hide();
+            });
+
+            let this = Rc::clone(self);
+            drag_source.connect_drag_cancel(move |_, _, _| {
+                this.finish_card_drag(false);
+                false
+            });
+
+            let this = Rc::clone(self);
+            drag_source.connect_drag_end(move |_, drag, _| {
+                this.finish_card_drag(drag_drop_succeeded(drag.selected_action()));
             });
 
             card.add_controller(drag_source);
@@ -1089,6 +1167,7 @@ fn format_age_at(ts: i64, now: i64) -> String {
 struct ClipDragPayload {
     mime: String,
     bytes: Vec<u8>,
+    is_text: bool,
 }
 
 fn clip_drag_payload(
@@ -1101,19 +1180,39 @@ fn clip_drag_payload(
         Some(ClipDragPayload {
             mime: clip.mime.clone(),
             bytes: payload,
+            is_text: false,
         })
     } else {
         let text = clip.text.as_ref()?;
         Some(ClipDragPayload {
             mime: "text/plain;charset=utf-8".into(),
             bytes: text.as_bytes().to_vec(),
+            is_text: true,
         })
     }
 }
 
+fn text_drag_mime_types() -> &'static [&'static str] {
+    &["text/plain;charset=utf-8", "text/plain"]
+}
+
 fn clip_drag_provider(payload: &ClipDragPayload) -> gdk::ContentProvider {
-    let bytes = glib::Bytes::from(&payload.bytes[..]);
-    gdk::ContentProvider::for_bytes(&payload.mime, &bytes)
+    if payload.is_text {
+        let bytes = glib::Bytes::from(&payload.bytes[..]);
+        let text = String::from_utf8_lossy(&payload.bytes).into_owned();
+        let mut providers = vec![gdk::ContentProvider::for_value(&text.to_value())];
+        for mime in text_drag_mime_types() {
+            providers.push(gdk::ContentProvider::for_bytes(mime, &bytes));
+        }
+        gdk::ContentProvider::new_union(&providers)
+    } else {
+        let bytes = glib::Bytes::from(&payload.bytes[..]);
+        gdk::ContentProvider::for_bytes(&payload.mime, &bytes)
+    }
+}
+
+fn should_reopen_after_drag(succeeded: bool, panel_hidden_for_drag: bool) -> bool {
+    !succeeded && panel_hidden_for_drag
 }
 
 fn drag_drop_succeeded(action: gdk::DragAction) -> bool {
@@ -1366,8 +1465,10 @@ mod tests {
     fn clip_drag_payload_text() {
         let clip = sample_clip("text", Some("hello drag"), None);
         let payload = clip_drag_payload(&clip, |_| None).unwrap();
+        assert!(payload.is_text);
         assert_eq!(payload.mime, "text/plain;charset=utf-8");
         assert_eq!(payload.bytes, b"hello drag");
+        assert_eq!(text_drag_mime_types().len() + 1, 3);
         assert_eq!(
             content_hash("text", "text/plain", &payload.bytes),
             content_hash("text", "text/plain", b"hello drag")
@@ -1381,8 +1482,10 @@ mod tests {
         std::fs::write(&path, b"\x89PNG\r\n").unwrap();
         let clip = sample_clip("image", None, Some(path.as_path()));
         let payload = clip_drag_payload(&clip, |p| std::fs::read(p).ok()).unwrap();
+        assert!(!payload.is_text);
         assert_eq!(payload.mime, "image/png");
         assert_eq!(payload.bytes, b"\x89PNG\r\n");
+        assert_eq!(text_drag_mime_types().len(), 2);
     }
 
     #[test]
@@ -1402,6 +1505,32 @@ mod tests {
         assert!(drag_drop_succeeded(gdk::DragAction::COPY));
         assert!(drag_drop_succeeded(gdk::DragAction::MOVE));
         assert!(!drag_drop_succeeded(gdk::DragAction::empty()));
+    }
+
+    #[test]
+    fn text_drag_offers_plain_and_utf8_mimes() {
+        assert_eq!(
+            text_drag_mime_types(),
+            &["text/plain;charset=utf-8", "text/plain"]
+        );
+    }
+
+    #[test]
+    fn reopen_after_drag_only_when_drop_failed_and_panel_hid() {
+        assert!(!should_reopen_after_drag(true, true));
+        assert!(!should_reopen_after_drag(true, false));
+        assert!(!should_reopen_after_drag(false, false));
+        assert!(should_reopen_after_drag(false, true));
+    }
+
+    #[test]
+    fn card_drag_threshold_is_above_the_gtk_default() {
+        assert!(CARD_DRAG_THRESHOLD_PX >= 20);
+    }
+
+    #[test]
+    fn drag_hide_is_deferred_so_the_compositor_can_start_the_drag() {
+        assert!(DRAG_HIDE_DELAY >= Duration::from_millis(16));
     }
 
     #[test]
