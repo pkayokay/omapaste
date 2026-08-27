@@ -125,6 +125,7 @@ pub struct Clip {
     pub hash: String,
     pub image_path: Option<String>,
     pub byte_size: i64,
+    pub custom_label: Option<String>,
 }
 
 impl Clip {
@@ -148,6 +149,14 @@ impl Clip {
             "text" => "Text".into(),
             other => other.replace('_', " "),
         }
+    }
+
+    pub fn display_label(&self) -> String {
+        self.custom_label
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| self.kind_label())
     }
 
     pub fn format_chars(&self) -> String {
@@ -208,6 +217,7 @@ impl Store {
             CREATE INDEX IF NOT EXISTS idx_clips_keep_until ON clips(keep_until);
             ",
         )?;
+        migrate(&conn)?;
         Ok(Self { conn })
     }
 
@@ -289,13 +299,7 @@ impl Store {
         }
         Ok(clips
             .into_iter()
-            .filter(|c| {
-                c.preview.to_lowercase().contains(&needle)
-                    || c.text
-                        .as_deref()
-                        .map(|t| t.to_lowercase().contains(&needle))
-                        .unwrap_or(false)
-            })
+            .filter(|c| clip_matches_query(c, &needle))
             .collect())
     }
 
@@ -328,6 +332,19 @@ impl Store {
         self.conn.execute(
             "UPDATE clips SET keep_preset = ?, keep_until = ? WHERE id = ?",
             params![preset, until, clip_id],
+        )?;
+        self.get(clip_id)
+    }
+
+    pub fn set_custom_label(
+        &self,
+        clip_id: i64,
+        label: Option<&str>,
+    ) -> rusqlite::Result<Option<Clip>> {
+        let value = label.map(str::trim).filter(|s| !s.is_empty());
+        self.conn.execute(
+            "UPDATE clips SET custom_label = ? WHERE id = ?",
+            params![value, clip_id],
         )?;
         self.get(clip_id)
     }
@@ -427,6 +444,32 @@ impl Store {
     }
 }
 
+fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    let has_col = conn
+        .prepare("PRAGMA table_info(clips)")?
+        .query_map([], |r| r.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .any(|name| name == "custom_label");
+    if !has_col {
+        conn.execute("ALTER TABLE clips ADD COLUMN custom_label TEXT", [])?;
+    }
+    Ok(())
+}
+
+fn clip_matches_query(clip: &Clip, needle: &str) -> bool {
+    clip.preview.to_lowercase().contains(needle)
+        || clip
+            .text
+            .as_deref()
+            .map(|t| t.to_lowercase().contains(needle))
+            .unwrap_or(false)
+        || clip
+            .custom_label
+            .as_deref()
+            .map(|l| l.to_lowercase().contains(needle))
+            .unwrap_or(false)
+}
+
 fn row_clip(row: &rusqlite::Row) -> rusqlite::Result<Clip> {
     Ok(Clip {
         id: row.get("id")?,
@@ -441,6 +484,7 @@ fn row_clip(row: &rusqlite::Row) -> rusqlite::Result<Clip> {
         hash: row.get("hash")?,
         image_path: row.get("image_path")?,
         byte_size: row.get("byte_size")?,
+        custom_label: row.get("custom_label")?,
     })
 }
 
@@ -724,6 +768,7 @@ mod tests {
             hash: "x".into(),
             image_path: None,
             byte_size: bytes,
+            custom_label: None,
         }
     }
 
@@ -925,6 +970,31 @@ mod tests {
         let unknown = sample_clip("text", Some("x"), 0, "custom");
         assert_eq!(unknown.keep_label(), "custom");
         assert_eq!(unknown.keep_short(), "custom");
+    }
+
+    #[test]
+    fn custom_label_round_trip_and_search() {
+        let (_d, store) = tmp_store();
+        let clip = add(&store, "hello", "1d", 10);
+        assert_eq!(clip.display_label(), "Text");
+
+        let renamed = store
+            .set_custom_label(clip.id, Some("  Notes  "))
+            .unwrap()
+            .unwrap();
+        assert_eq!(renamed.custom_label.as_deref(), Some("Notes"));
+        assert_eq!(renamed.display_label(), "Notes");
+
+        let cleared = store
+            .set_custom_label(clip.id, Some("  "))
+            .unwrap()
+            .unwrap();
+        assert!(cleared.custom_label.is_none());
+        assert_eq!(cleared.display_label(), "Text");
+
+        store.set_custom_label(clip.id, Some("todo")).unwrap();
+        assert_eq!(store.list("todo", Some(11)).unwrap().len(), 1);
+        assert!(store.list("text", Some(11)).unwrap().is_empty());
     }
 
     #[test]

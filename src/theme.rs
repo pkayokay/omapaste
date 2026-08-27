@@ -285,9 +285,19 @@ popover, popover.background, popover contents {{
 
 .op-kind {{
   font-weight: 600;
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0.3px;
   color: {fg};
+  padding: 2px 0 4px 0;
+  min-height: 22px;
+}}
+
+.op-kind-entry {{
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 2px 0 4px 0;
+  min-height: 22px;
 }}
 
 .op-preview {{

@@ -57,6 +57,7 @@ struct UiState {
     target: Option<TargetWindow>,
     drag_panel_hidden: bool,
     search_blink_id: Option<glib::SourceId>,
+    kind_edit_index: Option<usize>,
 }
 
 pub struct Overlay {
@@ -356,6 +357,7 @@ impl Overlay {
                 target: None,
                 drag_panel_hidden: false,
                 search_blink_id: None,
+                kind_edit_index: None,
             }),
         });
         ov.sync_search_chrome();
@@ -675,7 +677,8 @@ impl Overlay {
             self.search_label.set_text(&query);
             self.search_placeholder.set_visible(false);
             let text_w = search_text_width(&self.search_label, &query);
-            self.search_caret.set_margin_start(text_w + SEARCH_CARET_GAP);
+            self.search_caret
+                .set_margin_start(text_w + SEARCH_CARET_GAP);
         }
     }
 
@@ -798,6 +801,7 @@ impl Overlay {
         self.refresh(keep_selection);
         self.bind_card_clicks();
         self.bind_card_drags();
+        self.bind_kind_label_edits();
         let this = Rc::clone(self);
         glib::idle_add_local_once(move || {
             this.scroll_selected();
@@ -816,6 +820,130 @@ impl Overlay {
         let pos = visible.iter().position(|&i| i == selected).unwrap_or(0);
         let next = (pos as i32 + delta).clamp(0, visible.len() as i32 - 1) as usize;
         self.select(visible[next], copy);
+    }
+
+    fn bind_kind_label_edits(self: &Rc<Self>) {
+        let cards = self.state.borrow().cards.clone();
+        for (index, card) in cards.into_iter().enumerate() {
+            let Some(kind_widget) = find_css(card.upcast_ref(), "op-kind") else {
+                continue;
+            };
+            let Ok(kind) = kind_widget.downcast::<gtk::Label>() else {
+                continue;
+            };
+            self.attach_kind_label_gesture(&kind, index);
+        }
+    }
+
+    fn attach_kind_label_gesture(self: &Rc<Self>, kind: &gtk::Label, index: usize) {
+        let gesture = gtk::GestureClick::new();
+        gesture.set_button(0);
+        gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let this = Rc::clone(self);
+        gesture.connect_pressed(move |gesture, n_press, _, _| {
+            if n_press == 2 {
+                gesture.set_state(gtk::EventSequenceState::Claimed);
+                this.start_kind_edit(index);
+            }
+        });
+        kind.add_controller(gesture);
+    }
+
+    fn start_kind_edit(self: &Rc<Self>, index: usize) {
+        let editing = self.state.borrow().kind_edit_index;
+        if let Some(other) = editing {
+            if other != index {
+                self.finish_kind_edit(other, false);
+            } else {
+                return;
+            }
+        }
+        let (card, clip) = {
+            let st = self.state.borrow();
+            let Some(card) = st.cards.get(index).cloned() else {
+                return;
+            };
+            let Some(clip) = st.clips.get(index).cloned() else {
+                return;
+            };
+            (card, clip)
+        };
+        let Some(kind_widget) = find_css(card.upcast_ref(), "op-kind") else {
+            return;
+        };
+        let Ok(kind) = kind_widget.downcast::<gtk::Label>() else {
+            return;
+        };
+        let Some(header) = kind.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) else {
+            return;
+        };
+
+        let entry = gtk::Entry::new();
+        entry.set_text(&clip.display_label());
+        entry.add_css_class("op-kind");
+        entry.add_css_class("op-kind-entry");
+        entry.set_has_frame(false);
+        entry.set_hexpand(true);
+        header.remove(&kind);
+        header.prepend(&entry);
+        self.state.borrow_mut().kind_edit_index = Some(index);
+
+        entry.grab_focus();
+        entry.select_region(0, i32::MAX);
+
+        let this = Rc::clone(self);
+        entry.connect_activate(move |_| {
+            this.finish_kind_edit(index, false);
+        });
+        let focus = gtk::EventControllerFocus::new();
+        let this = Rc::clone(self);
+        focus.connect_leave(move |_| {
+            let this = Rc::clone(&this);
+            glib::idle_add_local_once(move || {
+                this.finish_kind_edit(index, false);
+            });
+        });
+        entry.add_controller(focus);
+    }
+
+    fn finish_kind_edit(self: &Rc<Self>, index: usize, cancel: bool) {
+        if self.state.borrow().kind_edit_index != Some(index) {
+            return;
+        }
+        let Some(card) = self.state.borrow().cards.get(index).cloned() else {
+            self.state.borrow_mut().kind_edit_index = None;
+            return;
+        };
+        let Some(header) = find_css(card.upcast_ref(), "op-card-header")
+            .and_then(|w| w.downcast::<gtk::Box>().ok())
+        else {
+            self.state.borrow_mut().kind_edit_index = None;
+            return;
+        };
+        let entry = header
+            .first_child()
+            .and_then(|w| w.downcast::<gtk::Entry>().ok());
+        let Some(entry) = entry else {
+            self.state.borrow_mut().kind_edit_index = None;
+            return;
+        };
+
+        if !cancel {
+            let text = entry.text().to_string();
+            let label = text.trim();
+            let value = if label.is_empty() { None } else { Some(label) };
+            let clip_id = self.state.borrow().clips[index].id;
+            if let Ok(Some(updated)) = self.store.set_custom_label(clip_id, value) {
+                self.state.borrow_mut().clips[index] = updated;
+            }
+        }
+
+        let display = self.state.borrow().clips[index].display_label();
+        let kind = kind_label_widget(&display);
+        header.remove(&entry);
+        header.prepend(&kind);
+        self.attach_kind_label_gesture(&kind, index);
+        self.state.borrow_mut().kind_edit_index = None;
     }
 
     fn bind_card_clicks(self: &Rc<Self>) {
@@ -1059,6 +1187,14 @@ impl Overlay {
     }
 
     fn on_key(self: &Rc<Self>, key: gdk::Key, state: gdk::ModifierType) -> glib::Propagation {
+        let editing = self.state.borrow().kind_edit_index;
+        if let Some(index) = editing {
+            if key == gdk::Key::Escape {
+                self.finish_kind_edit(index, true);
+                return glib::Propagation::Stop;
+            }
+            return glib::Propagation::Proceed;
+        }
         let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
         let searching = self.is_searching();
         let intent = key_intent(key, ctrl, searching);
@@ -1238,6 +1374,33 @@ fn clip_matches_filter(clip: &Clip, needle: &str) -> bool {
             .as_deref()
             .map(|t| t.to_lowercase().contains(needle))
             .unwrap_or(false)
+        || clip
+            .custom_label
+            .as_deref()
+            .map(|l| l.to_lowercase().contains(needle))
+            .unwrap_or(false)
+}
+
+fn find_css(widget: &gtk::Widget, class: &str) -> Option<gtk::Widget> {
+    if widget.has_css_class(class) {
+        return Some(widget.clone());
+    }
+    let mut child = widget.first_child();
+    while let Some(c) = child {
+        if let Some(found) = find_css(&c, class) {
+            return Some(found);
+        }
+        child = c.next_sibling();
+    }
+    None
+}
+
+fn kind_label_widget(text: &str) -> gtk::Label {
+    let kind = gtk::Label::new(Some(text));
+    kind.set_xalign(0.0);
+    kind.add_css_class("op-kind");
+    kind.set_overflow(Overflow::Visible);
+    kind
 }
 
 fn visible_clip_indices(clips: &[Clip], filter: &str) -> Vec<usize> {
@@ -1543,10 +1706,7 @@ fn clip_card(clip: &Clip) -> gtk::Box {
     let header = gtk::Box::new(Orientation::Vertical, 2);
     header.add_css_class("op-card-header");
     header.set_overflow(Overflow::Visible);
-    let kind = gtk::Label::new(Some(&clip.kind_label()));
-    kind.set_xalign(0.0);
-    kind.add_css_class("op-kind");
-    kind.set_overflow(Overflow::Visible);
+    let kind = kind_label_widget(&clip.display_label());
     let age = gtk::Label::new(Some(&format_age(clip.last_used_at)));
     age.set_xalign(0.0);
     age.add_css_class("op-meta");
@@ -1760,6 +1920,7 @@ mod tests {
             hash: "x".into(),
             image_path: image_path.map(|p| p.display().to_string()),
             byte_size: 0,
+            custom_label: None,
         }
     }
 
@@ -1999,6 +2160,7 @@ mod tests {
             hash: "x".into(),
             image_path: None,
             byte_size: 60,
+            custom_label: None,
         };
         let card = clip_card(&clip);
         let preview = find_css(card.upcast_ref(), "op-preview").expect("preview label");
@@ -2034,17 +2196,15 @@ mod tests {
     }
 
     fn find_css(widget: &gtk::Widget, class: &str) -> Option<gtk::Widget> {
-        if widget.has_css_class(class) {
-            return Some(widget.clone());
-        }
-        let mut child = widget.first_child();
-        while let Some(c) = child {
-            if let Some(found) = find_css(&c, class) {
-                return Some(found);
-            }
-            child = c.next_sibling();
-        }
-        None
+        super::find_css(widget, class)
+    }
+
+    #[test]
+    fn clip_filter_matches_custom_label() {
+        let mut clip = sample_clip("text", Some("hello"), None);
+        clip.custom_label = Some("todo item".into());
+        assert!(clip_matches_filter(&clip, "todo"));
+        assert!(!clip_matches_filter(&clip, "world"));
     }
 
     #[test]
