@@ -296,9 +296,14 @@ popover, popover.background, popover contents {{
   font-size: 13px;
   letter-spacing: 0.3px;
   color: {fg};
+  min-width: 0;
+}}
+
+.op-kind-slot {{
+  min-width: 0;
+  /* Padding lives on the slot so display↔edit swaps do not shift text. */
   padding: 2px 0 4px 0;
   min-height: 22px;
-  min-width: 0;
 }}
 
 .op-kind-edit-field {{

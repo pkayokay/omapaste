@@ -455,6 +455,31 @@ impl Overlay {
             keys.connect_key_pressed(move |_, key, _, state| o.on_key(key, state));
             ov.window.add_controller(keys);
         }
+        {
+            // Rename uses window keys (no real focus). Clicks outside the title
+            // field must commit and leave edit mode.
+            let click = gtk::GestureClick::new();
+            click.set_button(0);
+            click.set_propagation_phase(gtk::PropagationPhase::Capture);
+            let o = ov.clone();
+            click.connect_pressed(move |gesture, _, x, y| {
+                let Some(editing) = o.state.borrow().kind_edit_index else {
+                    return;
+                };
+                let Some(target) = gesture.widget() else {
+                    return;
+                };
+                if let Some(picked) = target.pick(x, y, gtk::PickFlags::DEFAULT) {
+                    if widget_or_ancestor_has_class(&picked, "op-kind-edit-field")
+                        || widget_or_ancestor_has_class(&picked, "op-kind-slot")
+                    {
+                        return;
+                    }
+                }
+                o.finish_kind_edit(editing, false);
+            });
+            ov.window.add_controller(click);
+        }
         let scroll = gtk::EventControllerScroll::new(
             gtk::EventControllerScrollFlags::HORIZONTAL | gtk::EventControllerScrollFlags::VERTICAL,
         );
@@ -924,23 +949,12 @@ impl Overlay {
             };
             (card, clip)
         };
-        let Some(header) = find_css(card.upcast_ref(), "op-card-header")
-            .and_then(|w| w.downcast::<gtk::Box>().ok())
-        else {
+        if find_css(card.upcast_ref(), "op-kind-edit-field").is_none() {
             return;
-        };
-        let Some(kind_widget) = find_css(header.upcast_ref(), "op-kind") else {
-            return;
-        };
-        let Ok(kind) = kind_widget.downcast::<gtk::Label>() else {
-            return;
-        };
+        }
 
         let text = clip.display_label();
         let chars = text.chars().count();
-        let field = kind_edit_field(&text);
-        header.remove(&kind);
-        header.prepend(&field);
         {
             let mut st = self.state.borrow_mut();
             st.kind_edit_index = Some(index);
@@ -950,22 +964,11 @@ impl Overlay {
         }
         self.sync_kind_edit_display(index);
         self.start_kind_edit_blink();
-
-        let focus = gtk::EventControllerFocus::new();
-        let this = Rc::clone(self);
-        focus.connect_leave(move |_| {
-            let this = Rc::clone(&this);
-            glib::idle_add_local_once(move || {
-                this.finish_kind_edit(index, false);
-            });
-        });
-        field.add_controller(focus);
     }
 
     fn kind_edit_widgets(&self, index: usize) -> Option<(gtk::Label, gtk::Box)> {
         let card = self.state.borrow().cards.get(index).cloned()?;
-        let header = find_css(card.upcast_ref(), "op-card-header")?;
-        let field = find_css(header.upcast_ref(), "op-kind-edit-field")?;
+        let field = find_css(card.upcast_ref(), "op-kind-edit-field")?;
         let label = find_css(field.upcast_ref(), "op-kind-edit-text")?
             .downcast::<gtk::Label>()
             .ok()?;
@@ -983,20 +986,23 @@ impl Overlay {
             let st = self.state.borrow();
             (st.kind_edit_text.clone(), st.kind_edit_cursor)
         };
+        let max_width = (PREVIEW_INNER_WIDTH - SEARCH_CARET_WIDTH).max(1);
         let (visible, scroll_start) = kind_edit_viewport(
             |slice| search_text_width(&label, slice),
             &text,
             cursor,
-            PREVIEW_INNER_WIDTH,
+            max_width,
         );
+        label.set_width_chars(1);
         label.set_ellipsize(pango::EllipsizeMode::None);
         label.set_text(&visible);
         let cursor_in_visible = cursor.saturating_sub(scroll_start);
-        let margin_cap = (PREVIEW_INNER_WIDTH - SEARCH_CARET_WIDTH).max(0);
+        let margin_cap = max_width;
         let margin = label_caret_x(&label, &visible, cursor_in_visible)
             .min(margin_cap)
             .max(0);
         caret.set_margin_start(margin);
+        caret.set_visible(true);
     }
 
     fn start_kind_edit_blink(self: &Rc<Self>) {
@@ -1040,16 +1046,6 @@ impl Overlay {
             self.clear_kind_edit_state();
             return;
         };
-        let Some(header) = find_css(card.upcast_ref(), "op-card-header")
-            .and_then(|w| w.downcast::<gtk::Box>().ok())
-        else {
-            self.clear_kind_edit_state();
-            return;
-        };
-        let Some(field) = find_css(header.upcast_ref(), "op-kind-edit-field") else {
-            self.clear_kind_edit_state();
-            return;
-        };
 
         if !cancel {
             let text = self.state.borrow().kind_edit_text.clone();
@@ -1062,9 +1058,11 @@ impl Overlay {
         }
 
         let display = self.state.borrow().clips[index].display_label();
-        let kind = kind_label_widget(&display);
-        header.remove(&field);
-        header.prepend(&kind);
+        if let Some(field) = find_css(card.upcast_ref(), "op-kind-edit-field")
+            .and_then(|w| w.downcast::<gtk::Overlay>().ok())
+        {
+            show_kind_title_display(&field, &display);
+        }
         self.clear_kind_edit_state();
     }
 
@@ -1311,6 +1309,11 @@ impl Overlay {
     }
 
     fn select(self: &Rc<Self>, index: usize, copy: bool) {
+        if let Some(editing) = self.state.borrow().kind_edit_index {
+            if editing != index {
+                self.finish_kind_edit(editing, false);
+            }
+        }
         let n = self.state.borrow().clips.len();
         let Some(index) = clamp_select(index, n) else {
             return;
@@ -1782,33 +1785,48 @@ fn find_css(widget: &gtk::Widget, class: &str) -> Option<gtk::Widget> {
     None
 }
 
-fn kind_label_widget(text: &str) -> gtk::Label {
-    let kind = gtk::Label::new(Some(text));
-    kind.set_xalign(0.0);
-    kind.add_css_class("op-kind");
-    kind.set_width_request(PREVIEW_INNER_WIDTH);
-    kind.set_hexpand(false);
-    kind.set_ellipsize(pango::EllipsizeMode::End);
-    kind.set_overflow(Overflow::Hidden);
-    kind
+fn widget_or_ancestor_has_class(widget: &gtk::Widget, class: &str) -> bool {
+    let mut current = Some(widget.clone());
+    while let Some(w) = current {
+        if w.has_css_class(class) {
+            return true;
+        }
+        current = w.parent();
+    }
+    false
 }
 
-fn kind_edit_field(text: &str) -> gtk::Overlay {
+fn kind_title_slot() -> gtk::Box {
+    let slot = gtk::Box::new(Orientation::Horizontal, 0);
+    slot.add_css_class("op-kind-slot");
+    slot.set_size_request(PREVIEW_INNER_WIDTH, -1);
+    slot.set_hexpand(false);
+    slot.set_halign(Align::Fill);
+    slot.set_overflow(Overflow::Hidden);
+    slot
+}
+
+fn kind_title_field(text: &str) -> gtk::Overlay {
+    // Same overlay chrome for display and edit so entering rename cannot
+    // shift padding or baseline (no Inscription↔Label swap).
     let field = gtk::Overlay::new();
     field.add_css_class("op-kind-edit-field");
-    field.set_width_request(PREVIEW_INNER_WIDTH);
-    field.set_hexpand(false);
+    field.set_hexpand(true);
     field.set_halign(Align::Fill);
+    field.set_valign(Align::Fill);
+    field.set_overflow(Overflow::Hidden);
 
-    let label = gtk::Label::new(Some(text));
+    let label = gtk::Label::new(None);
     label.add_css_class("op-kind");
     label.add_css_class("op-kind-edit-text");
     label.set_xalign(0.0);
     label.set_yalign(0.5);
-    label.set_halign(Align::Start);
+    label.set_halign(Align::Fill);
     label.set_valign(Align::Center);
     label.set_hexpand(true);
     label.set_overflow(Overflow::Hidden);
+    // Reserve caret width in both modes so showing the caret does not reflow.
+    label.set_margin_end(SEARCH_CARET_WIDTH);
     field.set_child(Some(&label));
 
     let caret = gtk::Box::new(Orientation::Vertical, 0);
@@ -1816,10 +1834,37 @@ fn kind_edit_field(text: &str) -> gtk::Overlay {
     caret.set_size_request(SEARCH_CARET_WIDTH, KIND_CARET_HEIGHT);
     caret.set_halign(Align::Start);
     caret.set_valign(Align::Center);
-    caret.set_visible(true);
+    caret.set_visible(false);
     field.add_overlay(&caret);
 
+    show_kind_title_display(&field, text);
     field
+}
+
+fn show_kind_title_display(field: &gtk::Overlay, text: &str) {
+    let Some(label) = find_css(field.upcast_ref(), "op-kind-edit-text")
+        .and_then(|w| w.downcast::<gtk::Label>().ok())
+    else {
+        return;
+    };
+    let Some(caret) = find_css(field.upcast_ref(), "op-search-caret")
+        .and_then(|w| w.downcast::<gtk::Box>().ok())
+    else {
+        return;
+    };
+    caret.set_visible(false);
+    caret.set_margin_start(0);
+    // Collapse natural width so the fixed slot owns card width; ellipsize
+    // paints "…" inside that allocation.
+    label.set_width_chars(1);
+    label.set_ellipsize(pango::EllipsizeMode::End);
+    label.set_text(text);
+}
+
+fn kind_label_widget(text: &str) -> gtk::Box {
+    let slot = kind_title_slot();
+    slot.append(&kind_title_field(text));
+    slot
 }
 
 fn kind_edit_range(anchor: usize, cursor: usize) -> (usize, usize) {
@@ -2173,10 +2218,14 @@ fn clip_card(clip: &Clip) -> gtk::Box {
     let header = gtk::Box::new(Orientation::Vertical, 2);
     header.add_css_class("op-card-header");
     header.set_overflow(Overflow::Hidden);
+    header.set_hexpand(false);
+    header.set_size_request(CARD_WIDTH - 2 * CARD_BORDER, -1);
     let kind = kind_label_widget(&clip.display_label());
     let age = gtk::Label::new(Some(&format_age(clip.last_used_at)));
     age.set_xalign(0.0);
     age.add_css_class("op-meta");
+    age.set_ellipsize(pango::EllipsizeMode::End);
+    age.set_max_width_chars(PREVIEW_MAX_CHARS);
     header.append(&kind);
     header.append(&age);
     card.append(&header);
@@ -2644,12 +2693,33 @@ mod tests {
         assert_eq!(label.yalign(), 0.0);
         assert!(!label.vexpands());
         assert_eq!(label.lines(), PREVIEW_LINES);
-        let kind = find_css(card.upcast_ref(), "op-kind").expect("kind label");
+        let kind_slot = find_css(card.upcast_ref(), "op-kind-slot").expect("kind slot");
+        assert_eq!(kind_slot.width_request(), PREVIEW_INNER_WIDTH);
+        assert_eq!(kind_slot.overflow(), Overflow::Hidden);
+        let kind = find_css(card.upcast_ref(), "op-kind-edit-text").expect("kind title");
         let kind = kind.downcast::<gtk::Label>().expect("kind is a label");
         assert_eq!(kind.text().as_str(), "Text");
         assert_eq!(kind.ellipsize(), pango::EllipsizeMode::End);
-        assert_eq!(kind.width_request(), PREVIEW_INNER_WIDTH);
-        assert_eq!(kind.overflow(), Overflow::Hidden);
+        assert_eq!(kind.width_chars(), 1);
+        assert_eq!(kind.margin_end(), SEARCH_CARET_WIDTH);
+        let caret = find_css(card.upcast_ref(), "op-search-caret")
+            .and_then(|w| w.downcast::<gtk::Box>().ok())
+            .expect("kind caret");
+        assert!(!caret.is_visible());
+        let long = Clip {
+            custom_label: Some("A very long custom title that must not widen the card".into()),
+            ..clip.clone()
+        };
+        let long_card = clip_card(&long);
+        assert_eq!(long_card.width_request(), CARD_WIDTH);
+        let long_slot =
+            find_css(long_card.upcast_ref(), "op-kind-slot").expect("long kind slot");
+        assert_eq!(long_slot.width_request(), PREVIEW_INNER_WIDTH);
+        let long_kind = find_css(long_card.upcast_ref(), "op-kind-edit-text")
+            .and_then(|w| w.downcast::<gtk::Label>().ok())
+            .expect("long kind label");
+        assert_eq!(long_kind.width_chars(), 1);
+        assert_eq!(long_kind.ellipsize(), pango::EllipsizeMode::End);
         assert_eq!(card.overflow(), Overflow::Visible);
         assert!(
             find_css(card.upcast_ref(), "op-chars").is_some(),
