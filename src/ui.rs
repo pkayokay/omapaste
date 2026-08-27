@@ -65,6 +65,9 @@ struct UiState {
     kind_edit_anchor: usize,
     kind_edit_cursor: usize,
     kind_edit_blink_id: Option<glib::SourceId>,
+    /// Set when a press finishes a rename; cleared on release so that press
+    /// cannot start a card drag (which would hide the bar).
+    block_card_drag: bool,
 }
 
 pub struct Overlay {
@@ -407,6 +410,7 @@ impl Overlay {
                 kind_edit_anchor: 0,
                 kind_edit_cursor: 0,
                 kind_edit_blink_id: None,
+                block_card_drag: false,
             }),
         });
         ov.sync_search_chrome();
@@ -442,6 +446,9 @@ impl Overlay {
                 let click = gtk::GestureClick::new();
                 click.set_button(0);
                 click.connect_pressed(move |_, _, _, _| {
+                    if let Some(editing) = o.state.borrow().kind_edit_index {
+                        o.finish_kind_edit(editing, false);
+                    }
                     o.hide_rc();
                 });
                 dismiss.add_controller(click);
@@ -468,7 +475,8 @@ impl Overlay {
         }
         {
             // Rename uses window keys (no real focus). Clicks outside the title
-            // field must commit and leave edit mode.
+            // field must commit and leave edit mode — but clicks on another
+            // card should only switch selection, not dismiss the bar.
             let click = gtk::GestureClick::new();
             click.set_button(0);
             click.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -486,8 +494,21 @@ impl Overlay {
                     {
                         return;
                     }
+                    // Stay inside the bar: commit rename and let the card/button
+                    // handler run (select, search, etc.).
+                    if widget_or_ancestor_has_class(&picked, "op-card")
+                        || widget_or_ancestor_has_class(&picked, "op-bar")
+                    {
+                        o.finish_kind_edit(editing, false);
+                        o.state.borrow_mut().block_card_drag = true;
+                        return;
+                    }
                 }
                 o.finish_kind_edit(editing, false);
+            });
+            let o = ov.clone();
+            click.connect_released(move |_, _, _, _| {
+                o.state.borrow_mut().block_card_drag = false;
             });
             ov.window.add_controller(click);
         }
@@ -1262,6 +1283,10 @@ impl Overlay {
             let click = gtk::GestureClick::new();
             let this = Rc::clone(self);
             click.connect_pressed(move |_, n_press, _, _| {
+                if let Some(editing) = this.state.borrow().kind_edit_index {
+                    this.finish_kind_edit(editing, false);
+                    this.state.borrow_mut().block_card_drag = true;
+                }
                 this.select(index, true);
                 if n_press >= 2 {
                     this.paste_selected();
@@ -1284,8 +1309,16 @@ impl Overlay {
             drag_source.set_exclusive(true);
             drag_source.set_touch_only(false);
 
+            let this_prep = Rc::clone(self);
             let clip_for_prepare = clip.clone();
             drag_source.connect_prepare(move |_, _, _| {
+                // Drag hides the bar. Block while renaming, and for the rest of
+                // a press that just committed a rename (edit state is already clear).
+                let st = this_prep.state.borrow();
+                if st.kind_edit_index.is_some() || st.block_card_drag {
+                    return None;
+                }
+                drop(st);
                 let payload = clip_drag_payload(&clip_for_prepare, |p| std::fs::read(p).ok())?;
                 Some(clip_drag_provider(&payload))
             });
