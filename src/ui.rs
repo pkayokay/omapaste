@@ -59,6 +59,7 @@ struct UiState {
     drag_panel_hidden: bool,
     search_blink_id: Option<glib::SourceId>,
     search_cursor: usize,
+    search_anchor: usize,
     kind_edit_index: Option<usize>,
     kind_edit_text: String,
     kind_edit_anchor: usize,
@@ -79,6 +80,7 @@ pub struct Overlay {
     search_stack: gtk::Stack,
     search_label: gtk::Label,
     search_placeholder: gtk::Label,
+    search_selection: gtk::Box,
     search_caret: gtk::Box,
     search_open_btn: gtk::Button,
     count_label: gtk::Label,
@@ -209,6 +211,13 @@ impl Overlay {
         search_placeholder.set_hexpand(false);
         search_placeholder.set_ellipsize(pango::EllipsizeMode::End);
         search_field.add_overlay(&search_placeholder);
+
+        let search_selection = gtk::Box::new(Orientation::Vertical, 0);
+        search_selection.add_css_class("op-text-selection");
+        search_selection.set_halign(Align::Start);
+        search_selection.set_valign(Align::Center);
+        search_selection.set_visible(false);
+        search_field.add_overlay(&search_selection);
 
         let search_caret = gtk::Box::new(Orientation::Vertical, 0);
         search_caret.add_css_class("op-search-caret");
@@ -369,6 +378,7 @@ impl Overlay {
             search_stack: search_stack.clone(),
             search_label: search_label.clone(),
             search_placeholder: search_placeholder.clone(),
+            search_selection: search_selection.clone(),
             search_caret: search_caret.clone(),
             search_open_btn: search_open_btn.clone(),
             count_label,
@@ -391,6 +401,7 @@ impl Overlay {
                 drag_panel_hidden: false,
                 search_blink_id: None,
                 search_cursor: 0,
+                search_anchor: 0,
                 kind_edit_index: None,
                 kind_edit_text: String::new(),
                 kind_edit_anchor: 0,
@@ -722,21 +733,39 @@ impl Overlay {
         self.set_search_edit(text, cursor, reset_selection);
     }
 
-    fn set_search_edit(&self, text: &str, cursor: usize, reset_selection: bool) {
-        let cursor = cursor.min(text.chars().count());
+    fn set_search_edit(&self, text: &str, cursor: usize, reset_filter_selection: bool) {
+        self.set_search_selection(text, cursor, cursor, reset_filter_selection);
+    }
+
+    fn set_search_selection(
+        &self,
+        text: &str,
+        anchor: usize,
+        cursor: usize,
+        reset_filter_selection: bool,
+    ) {
+        let len = text.chars().count();
+        let anchor = anchor.min(len);
+        let cursor = cursor.min(len);
         {
             let mut st = self.state.borrow_mut();
             st.filter = text.to_string();
+            st.search_anchor = anchor;
             st.search_cursor = cursor;
         }
         self.sync_search_display();
-        self.apply_search_filter(reset_selection);
+        self.apply_search_filter(reset_filter_selection);
     }
 
     fn sync_search_display(&self) {
-        let (query, cursor, searching) = {
+        let (query, anchor, cursor, searching) = {
             let st = self.state.borrow();
-            (st.filter.clone(), st.search_cursor, st.search_open)
+            (
+                st.filter.clone(),
+                st.search_anchor,
+                st.search_cursor,
+                st.search_open,
+            )
         };
         self.search_label.set_ellipsize(if searching {
             pango::EllipsizeMode::None
@@ -747,16 +776,24 @@ impl Overlay {
             self.search_label.set_text("");
             self.search_placeholder.set_visible(true);
             self.search_caret.set_margin_start(0);
+            self.search_selection.set_visible(false);
+            self.search_caret.set_visible(searching);
             self.search_placeholder
                 .set_margin_start(SEARCH_CARET_WIDTH + SEARCH_CARET_GAP);
         } else {
             self.search_label.set_text(&query);
             self.search_placeholder.set_visible(false);
-            let caret_x = label_caret_x(&self.search_label, &query, cursor);
-            self.search_caret.set_margin_start(caret_x);
-        }
-        if searching {
-            self.search_caret.set_visible(true);
+            let (sel_start, sel_end) = kind_edit_range(anchor, cursor);
+            sync_text_selection_chrome(
+                &self.search_label,
+                &self.search_selection,
+                &self.search_caret,
+                &query,
+                sel_start,
+                sel_end,
+                cursor,
+                searching,
+            );
         }
     }
 
@@ -766,6 +803,10 @@ impl Overlay {
 
     fn search_cursor(&self) -> usize {
         self.state.borrow().search_cursor
+    }
+
+    fn search_anchor(&self) -> usize {
+        self.state.borrow().search_anchor
     }
 }
 
@@ -966,25 +1007,32 @@ impl Overlay {
         self.start_kind_edit_blink();
     }
 
-    fn kind_edit_widgets(&self, index: usize) -> Option<(gtk::Label, gtk::Box)> {
+    fn kind_edit_widgets(&self, index: usize) -> Option<(gtk::Label, gtk::Box, gtk::Box)> {
         let card = self.state.borrow().cards.get(index).cloned()?;
         let field = find_css(card.upcast_ref(), "op-kind-edit-field")?;
         let label = find_css(field.upcast_ref(), "op-kind-edit-text")?
             .downcast::<gtk::Label>()
             .ok()?;
+        let selection = find_css(field.upcast_ref(), "op-text-selection")?
+            .downcast::<gtk::Box>()
+            .ok()?;
         let caret = find_css(field.upcast_ref(), "op-search-caret")?
             .downcast::<gtk::Box>()
             .ok()?;
-        Some((label, caret))
+        Some((label, selection, caret))
     }
 
     fn sync_kind_edit_display(&self, index: usize) {
-        let Some((label, caret)) = self.kind_edit_widgets(index) else {
+        let Some((label, selection, caret)) = self.kind_edit_widgets(index) else {
             return;
         };
-        let (text, cursor) = {
+        let (text, anchor, cursor) = {
             let st = self.state.borrow();
-            (st.kind_edit_text.clone(), st.kind_edit_cursor)
+            (
+                st.kind_edit_text.clone(),
+                st.kind_edit_anchor,
+                st.kind_edit_cursor,
+            )
         };
         let max_width = (PREVIEW_INNER_WIDTH - SEARCH_CARET_WIDTH).max(1);
         let (visible, scroll_start) = kind_edit_viewport(
@@ -996,13 +1044,20 @@ impl Overlay {
         label.set_width_chars(1);
         label.set_ellipsize(pango::EllipsizeMode::None);
         label.set_text(&visible);
+        let (sel_start, sel_end) = kind_edit_range(anchor, cursor);
+        let vis_sel_start = sel_start.saturating_sub(scroll_start).min(visible.chars().count());
+        let vis_sel_end = sel_end.saturating_sub(scroll_start).min(visible.chars().count());
         let cursor_in_visible = cursor.saturating_sub(scroll_start);
-        let margin_cap = max_width;
-        let margin = label_caret_x(&label, &visible, cursor_in_visible)
-            .min(margin_cap)
-            .max(0);
-        caret.set_margin_start(margin);
-        caret.set_visible(true);
+        sync_text_selection_chrome(
+            &label,
+            &selection,
+            &caret,
+            &visible,
+            vis_sel_start,
+            vis_sel_end,
+            cursor_in_visible,
+            true,
+        );
     }
 
     fn start_kind_edit_blink(self: &Rc<Self>) {
@@ -1014,8 +1069,12 @@ impl Overlay {
                 return glib::ControlFlow::Break;
             }
             if let Some(index) = this.state.borrow().kind_edit_index {
-                if let Some((_, caret)) = this.kind_edit_widgets(index) {
-                    caret.set_visible(!caret.is_visible());
+                if let Some((_, selection, caret)) = this.kind_edit_widgets(index) {
+                    if selection.is_visible() {
+                        caret.set_visible(false);
+                    } else {
+                        caret.set_visible(!caret.is_visible());
+                    }
                 }
             }
             glib::ControlFlow::Continue
@@ -1093,6 +1152,12 @@ impl Overlay {
         let alt = state.contains(gdk::ModifierType::ALT_MASK)
             || state.contains(gdk::ModifierType::META_MASK);
 
+        if is_select_all_key(key, ctrl) {
+            let len = text.chars().count();
+            self.set_kind_edit_selection(index, text, 0, len);
+            return glib::Propagation::Stop;
+        }
+
         if key == gdk::Key::BackSpace {
             let (next, pos) = if ctrl {
                 (String::new(), 0)
@@ -1154,14 +1219,25 @@ impl Overlay {
     }
 
     fn set_kind_edit_text(self: &Rc<Self>, index: usize, text: String, cursor: usize) {
+        self.set_kind_edit_selection(index, text, cursor, cursor);
+    }
+
+    fn set_kind_edit_selection(
+        self: &Rc<Self>,
+        index: usize,
+        text: String,
+        anchor: usize,
+        cursor: usize,
+    ) {
+        let len = text.chars().count();
         {
             let mut st = self.state.borrow_mut();
             if st.kind_edit_index != Some(index) {
                 return;
             }
             st.kind_edit_text = text;
-            st.kind_edit_anchor = cursor;
-            st.kind_edit_cursor = cursor;
+            st.kind_edit_anchor = anchor.min(len);
+            st.kind_edit_cursor = cursor.min(len);
         }
         self.sync_kind_edit_display(index);
         self.poke_kind_edit_caret();
@@ -1169,8 +1245,12 @@ impl Overlay {
 
     fn poke_kind_edit_caret(self: &Rc<Self>) {
         if let Some(index) = self.state.borrow().kind_edit_index {
-            if let Some((_, caret)) = self.kind_edit_widgets(index) {
-                caret.set_visible(true);
+            if let Some((_, selection, caret)) = self.kind_edit_widgets(index) {
+                if selection.is_visible() {
+                    caret.set_visible(false);
+                } else {
+                    caret.set_visible(true);
+                }
             }
         }
         self.start_kind_edit_blink();
@@ -1371,22 +1451,41 @@ impl Overlay {
             id.remove();
         }
         self.search.add_css_class("op-search-active");
-        self.search_caret.set_visible(true);
+        let has_selection = {
+            let st = self.state.borrow();
+            let (start, end) = kind_edit_range(st.search_anchor, st.search_cursor);
+            start != end
+        };
+        self.search_caret.set_visible(!has_selection);
         let this = Rc::clone(self);
         let id = glib::timeout_add_local(Duration::from_millis(530), move || {
             if !this.is_searching() {
                 this.state.borrow_mut().search_blink_id = None;
                 return glib::ControlFlow::Break;
             }
-            let visible = !this.search_caret.is_visible();
-            this.search_caret.set_visible(visible);
+            let has_selection = {
+                let st = this.state.borrow();
+                let (start, end) = kind_edit_range(st.search_anchor, st.search_cursor);
+                start != end
+            };
+            if has_selection {
+                this.search_caret.set_visible(false);
+            } else {
+                this.search_caret
+                    .set_visible(!this.search_caret.is_visible());
+            }
             glib::ControlFlow::Continue
         });
         self.state.borrow_mut().search_blink_id = Some(id);
     }
 
     fn poke_search_caret(self: &Rc<Self>) {
-        self.search_caret.set_visible(true);
+        let has_selection = {
+            let st = self.state.borrow();
+            let (start, end) = kind_edit_range(st.search_anchor, st.search_cursor);
+            start != end
+        };
+        self.search_caret.set_visible(!has_selection);
         if self.state.borrow().search_blink_id.is_none() {
             self.start_search_caret_blink();
         }
@@ -1398,6 +1497,7 @@ impl Overlay {
         }
         self.search.remove_css_class("op-search-active");
         self.search_caret.set_visible(false);
+        self.search_selection.set_visible(false);
     }
 
     fn open_search(self: &Rc<Self>, prefix: &str) {
@@ -1405,7 +1505,11 @@ impl Overlay {
         self.sync_search_chrome();
         if prefix.is_empty() {
             let end = self.search_query().chars().count();
-            self.state.borrow_mut().search_cursor = end;
+            {
+                let mut st = self.state.borrow_mut();
+                st.search_cursor = end;
+                st.search_anchor = end;
+            }
             self.sync_search_display();
             self.start_search_caret_blink();
         } else {
@@ -1534,7 +1638,15 @@ impl Overlay {
             _ => {
                 let text = self.search_query();
                 let cursor = self.search_cursor().min(text.chars().count());
-                let (start, end) = (cursor, cursor);
+                let anchor = self.search_anchor().min(text.chars().count());
+                let (start, end) = kind_edit_range(anchor, cursor);
+
+                if is_select_all_key(key, ctrl) {
+                    let len = text.chars().count();
+                    self.set_search_selection(&text, 0, len, false);
+                    self.poke_search_caret();
+                    return glib::Propagation::Stop;
+                }
 
                 if key == gdk::Key::Left {
                     let pos = if alt || ctrl {
@@ -1867,6 +1979,13 @@ fn kind_title_field(text: &str) -> gtk::Overlay {
     label.set_margin_end(SEARCH_CARET_WIDTH);
     field.set_child(Some(&label));
 
+    let selection = gtk::Box::new(Orientation::Vertical, 0);
+    selection.add_css_class("op-text-selection");
+    selection.set_halign(Align::Start);
+    selection.set_valign(Align::Center);
+    selection.set_visible(false);
+    field.add_overlay(&selection);
+
     let caret = gtk::Box::new(Orientation::Vertical, 0);
     caret.add_css_class("op-search-caret");
     caret.set_size_request(SEARCH_CARET_WIDTH, KIND_CARET_HEIGHT);
@@ -1885,11 +2004,17 @@ fn show_kind_title_display(field: &gtk::Overlay, text: &str) {
     else {
         return;
     };
+    let Some(selection) = find_css(field.upcast_ref(), "op-text-selection")
+        .and_then(|w| w.downcast::<gtk::Box>().ok())
+    else {
+        return;
+    };
     let Some(caret) = find_css(field.upcast_ref(), "op-search-caret")
         .and_then(|w| w.downcast::<gtk::Box>().ok())
     else {
         return;
     };
+    selection.set_visible(false);
     caret.set_visible(false);
     caret.set_margin_start(0);
     let max_px = (PREVIEW_INNER_WIDTH - SEARCH_CARET_WIDTH).max(1);
@@ -1905,6 +2030,40 @@ fn kind_label_widget(text: &str) -> gtk::Box {
     let slot = kind_title_slot();
     slot.append(&kind_title_field(text));
     slot
+}
+
+fn is_select_all_key(key: gdk::Key, ctrl: bool) -> bool {
+    ctrl && (key == gdk::Key::a || key == gdk::Key::A)
+}
+
+fn sync_text_selection_chrome(
+    label: &gtk::Label,
+    selection: &gtk::Box,
+    caret: &gtk::Box,
+    text: &str,
+    sel_start: usize,
+    sel_end: usize,
+    cursor: usize,
+    editing: bool,
+) {
+    let len = text.chars().count();
+    let sel_start = sel_start.min(len);
+    let sel_end = sel_end.min(len);
+    let cursor = cursor.min(len);
+    if editing && sel_start < sel_end {
+        let x0 = label_caret_x(label, text, sel_start);
+        let x1 = label_caret_x(label, text, sel_end);
+        let width = (x1 - x0).max(1);
+        selection.set_margin_start(x0);
+        selection.set_size_request(width, 18);
+        selection.set_visible(true);
+        caret.set_visible(false);
+    } else {
+        selection.set_visible(false);
+        let caret_x = label_caret_x(label, text, cursor);
+        caret.set_margin_start(caret_x);
+        caret.set_visible(editing);
+    }
 }
 
 fn kind_edit_range(anchor: usize, cursor: usize) -> (usize, usize) {
@@ -2816,6 +2975,14 @@ mod tests {
         assert_eq!(ellipsize_to_width(measure, "hello world", 1), "…");
         assert!(ellipsize_to_width(measure, "abcdefghij", 5).ends_with('…'));
         assert!(ellipsize_to_width(measure, "abcdefghij", 5).chars().count() <= 5);
+    }
+
+    #[test]
+    fn select_all_key_matches_ctrl_a() {
+        assert!(is_select_all_key(gdk::Key::a, true));
+        assert!(is_select_all_key(gdk::Key::A, true));
+        assert!(!is_select_all_key(gdk::Key::a, false));
+        assert!(!is_select_all_key(gdk::Key::b, true));
     }
 
     #[test]
