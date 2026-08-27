@@ -233,6 +233,9 @@ impl Overlay {
         search_closed.set_hexpand(true);
         search_closed.set_halign(Align::Fill);
         search_closed.set_valign(Align::Center);
+        // Fill the slot so the magnifier stays on the trailing edge
+        // (before shortcuts/issues) until search opens.
+        search_open_btn.set_hexpand(true);
         search_open_btn.set_halign(Align::End);
         search_closed.append(&search_open_btn);
 
