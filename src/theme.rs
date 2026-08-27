@@ -249,11 +249,6 @@ popover, popover.background, popover contents {{
   background-color: {accent};
 }}
 
-.op-text-selection {{
-  background-color: alpha({accent}, 0.45);
-  min-height: 18px;
-}}
-
 .op-card {{
   background-color: {bg2};
   color: {fg};

@@ -83,8 +83,8 @@ pub struct Overlay {
     search_stack: gtk::Stack,
     search_label: gtk::Label,
     search_placeholder: gtk::Label,
-    search_selection: gtk::Box,
     search_caret: gtk::Box,
+    selection_rgb: RefCell<(u16, u16, u16)>,
     search_open_btn: gtk::Button,
     count_label: gtk::Label,
     scroller: gtk::ScrolledWindow,
@@ -214,13 +214,6 @@ impl Overlay {
         search_placeholder.set_hexpand(false);
         search_placeholder.set_ellipsize(pango::EllipsizeMode::End);
         search_field.add_overlay(&search_placeholder);
-
-        let search_selection = gtk::Box::new(Orientation::Vertical, 0);
-        search_selection.add_css_class("op-text-selection");
-        search_selection.set_halign(Align::Start);
-        search_selection.set_valign(Align::Center);
-        search_selection.set_visible(false);
-        search_field.add_overlay(&search_selection);
 
         let search_caret = gtk::Box::new(Orientation::Vertical, 0);
         search_caret.add_css_class("op-search-caret");
@@ -381,8 +374,8 @@ impl Overlay {
             search_stack: search_stack.clone(),
             search_label: search_label.clone(),
             search_placeholder: search_placeholder.clone(),
-            search_selection: search_selection.clone(),
             search_caret: search_caret.clone(),
+            selection_rgb: RefCell::new(parse_hex_rgb_u16("#7aa2f7")),
             search_open_btn: search_open_btn.clone(),
             count_label,
             scroller: scroller.clone(),
@@ -589,6 +582,7 @@ impl Overlay {
 
     fn apply_theme(&self) {
         let theme = load_theme();
+        *self.selection_rgb.borrow_mut() = parse_hex_rgb_u16(&theme.get("accent"));
         let extra = format!(
             "\n.op-card {{\n  min-width: {CARD_WIDTH}px;\n  min-height: {CARD_HEIGHT}px;\n}}\n"
         );
@@ -795,9 +789,9 @@ impl Overlay {
         });
         if query.is_empty() {
             self.search_label.set_text("");
+            clear_label_selection_attrs(&self.search_label);
             self.search_placeholder.set_visible(true);
             self.search_caret.set_margin_start(0);
-            self.search_selection.set_visible(false);
             self.search_caret.set_visible(searching);
             self.search_placeholder
                 .set_margin_start(SEARCH_CARET_WIDTH + SEARCH_CARET_GAP);
@@ -807,13 +801,13 @@ impl Overlay {
             let (sel_start, sel_end) = kind_edit_range(anchor, cursor);
             sync_text_selection_chrome(
                 &self.search_label,
-                &self.search_selection,
                 &self.search_caret,
                 &query,
                 sel_start,
                 sel_end,
                 cursor,
                 searching,
+                *self.selection_rgb.borrow(),
             );
         }
     }
@@ -1028,23 +1022,20 @@ impl Overlay {
         self.start_kind_edit_blink();
     }
 
-    fn kind_edit_widgets(&self, index: usize) -> Option<(gtk::Label, gtk::Box, gtk::Box)> {
+    fn kind_edit_widgets(&self, index: usize) -> Option<(gtk::Label, gtk::Box)> {
         let card = self.state.borrow().cards.get(index).cloned()?;
         let field = find_css(card.upcast_ref(), "op-kind-edit-field")?;
         let label = find_css(field.upcast_ref(), "op-kind-edit-text")?
             .downcast::<gtk::Label>()
             .ok()?;
-        let selection = find_css(field.upcast_ref(), "op-text-selection")?
-            .downcast::<gtk::Box>()
-            .ok()?;
         let caret = find_css(field.upcast_ref(), "op-search-caret")?
             .downcast::<gtk::Box>()
             .ok()?;
-        Some((label, selection, caret))
+        Some((label, caret))
     }
 
     fn sync_kind_edit_display(&self, index: usize) {
-        let Some((label, selection, caret)) = self.kind_edit_widgets(index) else {
+        let Some((label, caret)) = self.kind_edit_widgets(index) else {
             return;
         };
         let (text, anchor, cursor) = {
@@ -1071,13 +1062,13 @@ impl Overlay {
         let cursor_in_visible = cursor.saturating_sub(scroll_start);
         sync_text_selection_chrome(
             &label,
-            &selection,
             &caret,
             &visible,
             vis_sel_start,
             vis_sel_end,
             cursor_in_visible,
             true,
+            *self.selection_rgb.borrow(),
         );
     }
 
@@ -1090,8 +1081,12 @@ impl Overlay {
                 return glib::ControlFlow::Break;
             }
             if let Some(index) = this.state.borrow().kind_edit_index {
-                if let Some((_, selection, caret)) = this.kind_edit_widgets(index) {
-                    if selection.is_visible() {
+                if let Some((_, caret)) = this.kind_edit_widgets(index) {
+                    let has_selection = {
+                        let st = this.state.borrow();
+                        st.kind_edit_anchor != st.kind_edit_cursor
+                    };
+                    if has_selection {
                         caret.set_visible(false);
                     } else {
                         caret.set_visible(!caret.is_visible());
@@ -1266,8 +1261,12 @@ impl Overlay {
 
     fn poke_kind_edit_caret(self: &Rc<Self>) {
         if let Some(index) = self.state.borrow().kind_edit_index {
-            if let Some((_, selection, caret)) = self.kind_edit_widgets(index) {
-                if selection.is_visible() {
+            if let Some((_, caret)) = self.kind_edit_widgets(index) {
+                let has_selection = {
+                    let st = self.state.borrow();
+                    st.kind_edit_anchor != st.kind_edit_cursor
+                };
+                if has_selection {
                     caret.set_visible(false);
                 } else {
                     caret.set_visible(true);
@@ -1530,7 +1529,7 @@ impl Overlay {
         }
         self.search.remove_css_class("op-search-active");
         self.search_caret.set_visible(false);
-        self.search_selection.set_visible(false);
+        clear_label_selection_attrs(&self.search_label);
     }
 
     fn open_search(self: &Rc<Self>, prefix: &str) {
@@ -1761,9 +1760,11 @@ fn search_text_width(label: &gtk::Label, text: &str) -> i32 {
     if text.is_empty() {
         return 0;
     }
-    let layout = label.layout();
-    layout.set_text(text);
-    layout.pixel_size().0
+    // Fresh layout so we never mutate the label's live Pango layout (and so
+    // width is unconstrained by the widget allocation).
+    let layout = label.create_pango_layout(Some(text));
+    layout.set_width(-1);
+    layout.pixel_size().0.max(0)
 }
 
 fn char_byte_index(text: &str, cursor_chars: usize) -> usize {
@@ -1781,17 +1782,8 @@ fn label_caret_x(label: &gtk::Label, text: &str, cursor_chars: usize) -> i32 {
     if cursor_chars == 0 || text.is_empty() {
         return 0;
     }
-    if label.text().as_str() != text {
-        label.set_text(text);
-    }
-    // Measure the prefix in pixels. index_to_line_x is in Pango units
-    // (1/SCALE of a pixel); treating that as pixels pins the caret at the end.
     let prefix: String = text.chars().take(cursor_chars).collect();
-    let layout = label.layout();
-    layout.set_text(&prefix);
-    let x = layout.pixel_size().0;
-    layout.set_text(text);
-    x.max(0)
+    search_text_width(label, &prefix)
 }
 
 fn search_text_pop_word(text: &str) -> String {
@@ -2012,13 +2004,6 @@ fn kind_title_field(text: &str) -> gtk::Overlay {
     label.set_margin_end(SEARCH_CARET_WIDTH);
     field.set_child(Some(&label));
 
-    let selection = gtk::Box::new(Orientation::Vertical, 0);
-    selection.add_css_class("op-text-selection");
-    selection.set_halign(Align::Start);
-    selection.set_valign(Align::Center);
-    selection.set_visible(false);
-    field.add_overlay(&selection);
-
     let caret = gtk::Box::new(Orientation::Vertical, 0);
     caret.add_css_class("op-search-caret");
     caret.set_size_request(SEARCH_CARET_WIDTH, KIND_CARET_HEIGHT);
@@ -2037,17 +2022,12 @@ fn show_kind_title_display(field: &gtk::Overlay, text: &str) {
     else {
         return;
     };
-    let Some(selection) = find_css(field.upcast_ref(), "op-text-selection")
-        .and_then(|w| w.downcast::<gtk::Box>().ok())
-    else {
-        return;
-    };
     let Some(caret) = find_css(field.upcast_ref(), "op-search-caret")
         .and_then(|w| w.downcast::<gtk::Box>().ok())
     else {
         return;
     };
-    selection.set_visible(false);
+    clear_label_selection_attrs(&label);
     caret.set_visible(false);
     caret.set_margin_start(0);
     let max_px = (PREVIEW_INNER_WIDTH - SEARCH_CARET_WIDTH).max(1);
@@ -2069,30 +2049,71 @@ fn is_select_all_key(key: gdk::Key, ctrl: bool) -> bool {
     ctrl && (key == gdk::Key::a || key == gdk::Key::A)
 }
 
+fn parse_hex_rgb_u16(hex: &str) -> (u16, u16, u16) {
+    let h = hex.trim().trim_start_matches('#');
+    let byte = |i: usize| {
+        u8::from_str_radix(h.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0)
+    };
+    let widen = |b: u8| ((b as u16) << 8) | b as u16;
+    if h.len() >= 6 {
+        (widen(byte(0)), widen(byte(2)), widen(byte(4)))
+    } else {
+        (0x7a7a, 0xa2a2, 0xf7f7)
+    }
+}
+
+fn clear_label_selection_attrs(label: &gtk::Label) {
+    label.set_attributes(None::<&pango::AttrList>);
+}
+
+fn apply_label_selection_attrs(
+    label: &gtk::Label,
+    text: &str,
+    sel_start: usize,
+    sel_end: usize,
+    rgb: (u16, u16, u16),
+) {
+    let len = text.chars().count();
+    let sel_start = sel_start.min(len);
+    let sel_end = sel_end.min(len);
+    if sel_start >= sel_end {
+        clear_label_selection_attrs(label);
+        return;
+    }
+    let start = char_byte_index(text, sel_start) as u32;
+    let end = char_byte_index(text, sel_end) as u32;
+    let attrs = pango::AttrList::new();
+    let mut bg = pango::AttrColor::new_background(rgb.0, rgb.1, rgb.2).upcast();
+    bg.set_start_index(start);
+    bg.set_end_index(end);
+    attrs.insert(bg);
+    // Match the previous overlay alpha(~0.45) so the accent wash stays soft.
+    let mut alpha = pango::AttrInt::new_background_alpha((0.45 * 65535.0) as u16).upcast();
+    alpha.set_start_index(start);
+    alpha.set_end_index(end);
+    attrs.insert(alpha);
+    label.set_attributes(Some(&attrs));
+}
+
 fn sync_text_selection_chrome(
     label: &gtk::Label,
-    selection: &gtk::Box,
     caret: &gtk::Box,
     text: &str,
     sel_start: usize,
     sel_end: usize,
     cursor: usize,
     editing: bool,
+    rgb: (u16, u16, u16),
 ) {
     let len = text.chars().count();
     let sel_start = sel_start.min(len);
     let sel_end = sel_end.min(len);
     let cursor = cursor.min(len);
     if editing && sel_start < sel_end {
-        let x0 = label_caret_x(label, text, sel_start);
-        let x1 = label_caret_x(label, text, sel_end);
-        let width = (x1 - x0).max(1);
-        selection.set_margin_start(x0);
-        selection.set_size_request(width, 18);
-        selection.set_visible(true);
+        apply_label_selection_attrs(label, text, sel_start, sel_end, rgb);
         caret.set_visible(false);
     } else {
-        selection.set_visible(false);
+        clear_label_selection_attrs(label);
         let caret_x = label_caret_x(label, text, cursor);
         caret.set_margin_start(caret_x);
         caret.set_visible(editing);
@@ -3016,6 +3037,21 @@ mod tests {
         assert!(is_select_all_key(gdk::Key::A, true));
         assert!(!is_select_all_key(gdk::Key::a, false));
         assert!(!is_select_all_key(gdk::Key::b, true));
+    }
+
+    #[test]
+    fn parse_hex_rgb_u16_widens_bytes_for_pango() {
+        assert_eq!(parse_hex_rgb_u16("#7aa2f7"), (0x7a7a, 0xa2a2, 0xf7f7));
+        assert_eq!(parse_hex_rgb_u16("abcdef"), (0xabab, 0xcdcd, 0xefef));
+    }
+
+    #[test]
+    fn char_byte_index_covers_full_utf8_select_all_range() {
+        let text = "café 🦀";
+        let len = text.chars().count();
+        assert_eq!(char_byte_index(text, 0), 0);
+        assert_eq!(char_byte_index(text, len), text.len());
+        assert_eq!(char_byte_index(text, 4), "café".len());
     }
 
     #[test]
