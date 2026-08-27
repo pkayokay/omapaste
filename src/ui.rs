@@ -58,6 +58,7 @@ struct UiState {
     target: Option<TargetWindow>,
     drag_panel_hidden: bool,
     search_blink_id: Option<glib::SourceId>,
+    search_cursor: usize,
     kind_edit_index: Option<usize>,
     kind_edit_text: String,
     kind_edit_anchor: usize,
@@ -389,6 +390,7 @@ impl Overlay {
                 target: None,
                 drag_panel_hidden: false,
                 search_blink_id: None,
+                search_cursor: 0,
                 kind_edit_index: None,
                 kind_edit_text: String::new(),
                 kind_edit_anchor: 0,
@@ -531,7 +533,7 @@ impl Overlay {
     fn apply_theme(&self) {
         let theme = load_theme();
         let extra = format!(
-            "\n.op-card {{\n  min-width: {CARD_WIDTH}px;\n  max-width: {CARD_WIDTH}px;\n  min-height: {CARD_HEIGHT}px;\n}}\n"
+            "\n.op-card {{\n  min-width: {CARD_WIDTH}px;\n  min-height: {CARD_HEIGHT}px;\n}}\n"
         );
         self.css.load_from_string(&(css_for(&theme) + &extra));
         if let Some(display) = gdk::Display::default() {
@@ -691,14 +693,26 @@ impl Overlay {
     }
 
     fn set_search_query(&self, text: &str, reset_selection: bool) {
-        self.state.borrow_mut().filter = text.to_string();
+        let cursor = text.chars().count();
+        self.set_search_edit(text, cursor, reset_selection);
+    }
+
+    fn set_search_edit(&self, text: &str, cursor: usize, reset_selection: bool) {
+        let cursor = cursor.min(text.chars().count());
+        {
+            let mut st = self.state.borrow_mut();
+            st.filter = text.to_string();
+            st.search_cursor = cursor;
+        }
         self.sync_search_display();
         self.apply_search_filter(reset_selection);
     }
 
     fn sync_search_display(&self) {
-        let query = self.state.borrow().filter.clone();
-        let searching = self.is_searching();
+        let (query, cursor, searching) = {
+            let st = self.state.borrow();
+            (st.filter.clone(), st.search_cursor, st.search_open)
+        };
         self.search_label.set_ellipsize(if searching {
             pango::EllipsizeMode::None
         } else {
@@ -713,7 +727,7 @@ impl Overlay {
         } else {
             self.search_label.set_text(&query);
             self.search_placeholder.set_visible(false);
-            let caret_x = label_caret_x(&self.search_label, &query, query.chars().count());
+            let caret_x = label_caret_x(&self.search_label, &query, cursor);
             self.search_caret.set_margin_start(caret_x);
         }
         if searching {
@@ -723,6 +737,10 @@ impl Overlay {
 
     fn search_query(&self) -> String {
         self.state.borrow().filter.clone()
+    }
+
+    fn search_cursor(&self) -> usize {
+        self.state.borrow().search_cursor
     }
 }
 
@@ -1067,20 +1085,17 @@ impl Overlay {
         if self.state.borrow().kind_edit_index != Some(index) {
             return glib::Propagation::Stop;
         }
-        let (text, anchor, cursor) = {
+        let (text, start, end, cursor) = {
             let st = self.state.borrow();
-            (
-                st.kind_edit_text.clone(),
-                st.kind_edit_anchor,
-                st.kind_edit_cursor,
-            )
+            let cursor = st.kind_edit_cursor;
+            let (start, end) = kind_edit_range(st.kind_edit_anchor, cursor);
+            (st.kind_edit_text.clone(), start, end, cursor)
         };
-        let (start, end) = kind_edit_range(anchor, cursor);
         let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
+        let alt = state.contains(gdk::ModifierType::ALT_MASK)
+            || state.contains(gdk::ModifierType::META_MASK);
 
         if key == gdk::Key::BackSpace {
-            let alt = state.contains(gdk::ModifierType::ALT_MASK)
-                || state.contains(gdk::ModifierType::META_MASK);
             let (next, pos) = if ctrl {
                 (String::new(), 0)
             } else if alt {
@@ -1101,12 +1116,20 @@ impl Overlay {
             return glib::Propagation::Stop;
         }
         if key == gdk::Key::Left {
-            let pos = entry_edit_move(&text, start, end, cursor as i32, -1);
+            let pos = if alt || ctrl {
+                entry_edit_move_word(&text, cursor, false)
+            } else {
+                entry_edit_move(&text, start, end, cursor as i32, -1)
+            };
             self.set_kind_edit_text(index, text, pos);
             return glib::Propagation::Stop;
         }
         if key == gdk::Key::Right {
-            let pos = entry_edit_move(&text, start, end, cursor as i32, 1);
+            let pos = if alt || ctrl {
+                entry_edit_move_word(&text, cursor, true)
+            } else {
+                entry_edit_move(&text, start, end, cursor as i32, 1)
+            };
             self.set_kind_edit_text(index, text, pos);
             return glib::Propagation::Stop;
         }
@@ -1359,6 +1382,13 @@ impl Overlay {
         self.state.borrow_mut().search_blink_id = Some(id);
     }
 
+    fn poke_search_caret(self: &Rc<Self>) {
+        self.search_caret.set_visible(true);
+        if self.state.borrow().search_blink_id.is_none() {
+            self.start_search_caret_blink();
+        }
+    }
+
     fn stop_search_caret_blink(&self) {
         if let Some(id) = self.state.borrow_mut().search_blink_id.take() {
             id.remove();
@@ -1371,6 +1401,8 @@ impl Overlay {
         self.state.borrow_mut().search_open = true;
         self.sync_search_chrome();
         if prefix.is_empty() {
+            let end = self.search_query().chars().count();
+            self.state.borrow_mut().search_cursor = end;
             self.sync_search_display();
             self.start_search_caret_blink();
         } else {
@@ -1498,35 +1530,76 @@ impl Overlay {
             KeyIntent::OpenSearch => glib::Propagation::Stop,
             _ => {
                 let text = self.search_query();
-                if key == gdk::Key::BackSpace {
-                    let next = if ctrl {
-                        String::new()
-                    } else if alt {
-                        search_text_pop_word(&text)
+                let cursor = self.search_cursor().min(text.chars().count());
+                let (start, end) = (cursor, cursor);
+
+                if key == gdk::Key::Left {
+                    let pos = if alt || ctrl {
+                        entry_edit_move_word(&text, cursor, false)
                     } else {
-                        search_text_pop(&text)
+                        entry_edit_move(&text, start, end, cursor as i32, -1)
                     };
-                    if next != text {
-                        self.set_search_query(&next, false);
+                    self.set_search_edit(&text, pos, false);
+                    self.poke_search_caret();
+                    return glib::Propagation::Stop;
+                }
+                if key == gdk::Key::Right {
+                    let pos = if alt || ctrl {
+                        entry_edit_move_word(&text, cursor, true)
+                    } else {
+                        entry_edit_move(&text, start, end, cursor as i32, 1)
+                    };
+                    self.set_search_edit(&text, pos, false);
+                    self.poke_search_caret();
+                    return glib::Propagation::Stop;
+                }
+                if key == gdk::Key::Home {
+                    self.set_search_edit(&text, 0, false);
+                    self.poke_search_caret();
+                    return glib::Propagation::Stop;
+                }
+                if key == gdk::Key::End {
+                    self.set_search_edit(&text, text.chars().count(), false);
+                    self.poke_search_caret();
+                    return glib::Propagation::Stop;
+                }
+                if key == gdk::Key::BackSpace {
+                    let (next, pos) = if ctrl {
+                        (String::new(), 0)
+                    } else if alt {
+                        entry_edit_backspace_word(&text, start, end)
+                    } else {
+                        entry_edit_backspace(&text, start, end)
+                    };
+                    if next != text || pos != cursor {
+                        self.set_search_edit(&next, pos, false);
                     }
+                    self.poke_search_caret();
                     return glib::Propagation::Stop;
                 }
                 if ctrl && key == gdk::Key::u {
                     if !text.is_empty() {
-                        self.set_search_query("", false);
+                        self.set_search_edit("", 0, false);
                     }
+                    self.poke_search_caret();
                     return glib::Propagation::Stop;
                 }
                 if ctrl {
                     return glib::Propagation::Proceed;
                 }
                 if key == gdk::Key::Delete || key == gdk::Key::KP_Delete {
-                    self.set_search_query(&search_text_pop(&text), false);
+                    let (next, pos) = entry_edit_delete(&text, start, end);
+                    if next != text || pos != cursor {
+                        self.set_search_edit(&next, pos, false);
+                    }
+                    self.poke_search_caret();
                     return glib::Propagation::Stop;
                 }
                 if let Some(ch) = key.to_unicode() {
                     if !ch.is_control() {
-                        self.set_search_query(&search_text_push(&text, ch), false);
+                        let (next, pos) = entry_edit_insert(&text, start, end, ch);
+                        self.set_search_edit(&next, pos, false);
+                        self.poke_search_caret();
                         return glib::Propagation::Stop;
                     }
                 }
@@ -1563,29 +1636,14 @@ fn label_caret_x(label: &gtk::Label, text: &str, cursor_chars: usize) -> i32 {
     if label.text().as_str() != text {
         label.set_text(text);
     }
+    // Measure the prefix in pixels. index_to_line_x is in Pango units
+    // (1/SCALE of a pixel); treating that as pixels pins the caret at the end.
+    let prefix: String = text.chars().take(cursor_chars).collect();
     let layout = label.layout();
-    let byte_index = char_byte_index(text, cursor_chars) as i32;
-    let mut x = layout.index_to_line_x(byte_index, false).1;
-    let full_w = layout.pixel_size().0;
-    if x <= 0 && cursor_chars > 0 {
-        let prefix: String = text.chars().take(cursor_chars).collect();
-        layout.set_text(&prefix);
-        x = layout.pixel_size().0;
-        layout.set_text(text);
-    }
-    x.max(0).min(full_w.max(0))
-}
-
-fn search_text_push(text: &str, ch: char) -> String {
-    let mut out = text.to_string();
-    out.push(ch);
-    out
-}
-
-fn search_text_pop(text: &str) -> String {
-    let mut chars: Vec<char> = text.chars().collect();
-    chars.pop();
-    chars.into_iter().collect()
+    layout.set_text(&prefix);
+    let x = layout.pixel_size().0;
+    layout.set_text(text);
+    x.max(0)
 }
 
 fn search_text_pop_word(text: &str) -> String {
@@ -1670,6 +1728,29 @@ fn entry_edit_move(text: &str, start: usize, end: usize, cursor: i32, delta: i32
         (cursor.max(0) as usize)
             .saturating_add_signed(delta as isize)
             .min(len)
+    }
+}
+
+fn entry_edit_move_word(text: &str, cursor: usize, forward: bool) -> usize {
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    let mut i = cursor.min(len);
+    if forward {
+        while i < len && !chars[i].is_whitespace() {
+            i += 1;
+        }
+        while i < len && chars[i].is_whitespace() {
+            i += 1;
+        }
+        i
+    } else {
+        while i > 0 && chars[i - 1].is_whitespace() {
+            i -= 1;
+        }
+        while i > 0 && !chars[i - 1].is_whitespace() {
+            i -= 1;
+        }
+        i
     }
 }
 
@@ -2445,11 +2526,12 @@ mod tests {
     }
 
     #[test]
-    fn search_text_edits_append_and_backspace() {
-        assert_eq!(search_text_push("", 'a'), "a");
-        assert_eq!(search_text_push("ab", 'c'), "abc");
-        assert_eq!(search_text_pop("abc"), "ab");
-        assert_eq!(search_text_pop(""), "");
+    fn search_text_edits_insert_and_backspace_at_cursor() {
+        assert_eq!(entry_edit_insert("", 0, 0, 'a'), ("a".into(), 1));
+        assert_eq!(entry_edit_insert("ab", 2, 2, 'c'), ("abc".into(), 3));
+        assert_eq!(entry_edit_insert("ac", 1, 1, 'b'), ("abc".into(), 2));
+        assert_eq!(entry_edit_backspace("abc", 3, 3), ("ab".into(), 2));
+        assert_eq!(entry_edit_backspace("", 0, 0), ("".into(), 0));
     }
 
     #[test]
@@ -2608,6 +2690,11 @@ mod tests {
         assert_eq!(entry_edit_delete("abc", 1, 1), ("ac".into(), 1));
         assert_eq!(entry_edit_move("abc", 0, 3, 0, 1), 3);
         assert_eq!(entry_edit_move("abc", 0, 3, 0, -1), 0);
+        assert_eq!(entry_edit_move_word("hello world", 11, false), 6);
+        assert_eq!(entry_edit_move_word("hello world", 6, false), 0);
+        assert_eq!(entry_edit_move_word("hello world", 0, true), 6);
+        assert_eq!(entry_edit_move_word("hello world", 6, true), 11);
+        assert_eq!(entry_edit_move_word("ab  cd", 2, true), 4);
     }
 
     #[test]
