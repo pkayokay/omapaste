@@ -75,6 +75,7 @@ pub struct Overlay {
     clipper: gtk::Overlay,
     brand: gtk::Box,
     search: gtk::Box,
+    search_stack: gtk::Stack,
     search_label: gtk::Label,
     search_placeholder: gtk::Label,
     search_caret: gtk::Box,
@@ -157,6 +158,7 @@ impl Overlay {
         brand.append(&count_label);
         brand.set_halign(Align::Start);
         brand.set_valign(Align::Center);
+        brand.set_hexpand(false);
 
         let search_open_btn = gtk::Button::new();
         search_open_btn.set_has_frame(false);
@@ -171,6 +173,7 @@ impl Overlay {
         let search = gtk::Box::new(Orientation::Horizontal, 6);
         search.add_css_class("op-search");
         search.set_hexpand(true);
+        search.set_halign(Align::Fill);
         search.set_vexpand(false);
         search.set_valign(Align::Center);
         search.set_size_request(-1, 28);
@@ -226,6 +229,27 @@ impl Overlay {
         search.append(&search_field);
         search.append(&search_close_btn);
 
+        let search_closed = gtk::Box::new(Orientation::Horizontal, 0);
+        search_closed.set_hexpand(true);
+        search_closed.set_halign(Align::Fill);
+        search_closed.set_valign(Align::Center);
+        search_open_btn.set_halign(Align::End);
+        search_closed.append(&search_open_btn);
+
+        let search_stack = gtk::Stack::new();
+        search_stack.add_css_class("op-search-slot");
+        search_stack.set_hexpand(true);
+        search_stack.set_halign(Align::Fill);
+        search_stack.set_valign(Align::Center);
+        search_stack.set_hhomogeneous(true);
+        search_stack.set_vhomogeneous(true);
+        search_stack.set_transition_type(gtk::StackTransitionType::None);
+        search_stack.set_transition_duration(0);
+        search_stack.set_size_request(-1, 28);
+        search_stack.add_named(&search, Some("open"));
+        search_stack.add_named(&search_closed, Some("closed"));
+        search_stack.set_visible_child_name("closed");
+
         let shortcuts_btn = gtk::Button::new();
         shortcuts_btn.set_has_frame(false);
         shortcuts_btn.set_icon_name("input-keyboard-symbolic");
@@ -253,8 +277,7 @@ impl Overlay {
         });
 
         header.append(&brand);
-        header.append(&search);
-        header.append(&search_open_btn);
+        header.append(&search_stack);
         header.append(&shortcuts_btn);
         header.append(&issues_btn);
 
@@ -339,6 +362,7 @@ impl Overlay {
             clipper,
             brand,
             search: search.clone(),
+            search_stack: search_stack.clone(),
             search_label: search_label.clone(),
             search_placeholder: search_placeholder.clone(),
             search_caret: search_caret.clone(),
@@ -671,6 +695,12 @@ impl Overlay {
 
     fn sync_search_display(&self) {
         let query = self.state.borrow().filter.clone();
+        let searching = self.is_searching();
+        self.search_label.set_ellipsize(if searching {
+            pango::EllipsizeMode::None
+        } else {
+            pango::EllipsizeMode::End
+        });
         if query.is_empty() {
             self.search_label.set_text("");
             self.search_placeholder.set_visible(true);
@@ -680,9 +710,11 @@ impl Overlay {
         } else {
             self.search_label.set_text(&query);
             self.search_placeholder.set_visible(false);
-            let text_w = search_text_width(&self.search_label, &query);
-            self.search_caret
-                .set_margin_start(text_w + SEARCH_CARET_GAP);
+            let caret_x = label_caret_x(&self.search_label, &query, query.chars().count());
+            self.search_caret.set_margin_start(caret_x);
+        }
+        if searching {
+            self.search_caret.set_visible(true);
         }
     }
 
@@ -930,7 +962,7 @@ impl Overlay {
             let st = self.state.borrow();
             (st.kind_edit_text.clone(), st.kind_edit_cursor)
         };
-        let (visible, margin) = kind_edit_viewport(
+        let (visible, scroll_start) = kind_edit_viewport(
             |slice| search_text_width(&label, slice),
             &text,
             cursor,
@@ -938,6 +970,11 @@ impl Overlay {
         );
         label.set_ellipsize(pango::EllipsizeMode::None);
         label.set_text(&visible);
+        let cursor_in_visible = cursor.saturating_sub(scroll_start);
+        let margin_cap = (PREVIEW_INNER_WIDTH - SEARCH_CARET_WIDTH).max(0);
+        let margin = label_caret_x(&label, &visible, cursor_in_visible)
+            .min(margin_cap)
+            .max(0);
         caret.set_margin_start(margin);
     }
 
@@ -1296,9 +1333,8 @@ impl Overlay {
 
     fn sync_search_chrome(&self) {
         let open = self.state.borrow().search_open;
-        self.search.set_visible(open);
-        self.search_open_btn.set_visible(!open);
-        self.brand.set_hexpand(!open);
+        self.search_stack
+            .set_visible_child_name(if open { "open" } else { "closed" });
     }
 
     fn start_search_caret_blink(self: &Rc<Self>) {
@@ -1506,6 +1542,37 @@ fn search_text_width(label: &gtk::Label, text: &str) -> i32 {
     layout.pixel_size().0
 }
 
+fn char_byte_index(text: &str, cursor_chars: usize) -> usize {
+    if cursor_chars >= text.chars().count() {
+        text.len()
+    } else {
+        text.char_indices()
+            .nth(cursor_chars)
+            .map(|(index, _)| index)
+            .unwrap_or(text.len())
+    }
+}
+
+fn label_caret_x(label: &gtk::Label, text: &str, cursor_chars: usize) -> i32 {
+    if cursor_chars == 0 || text.is_empty() {
+        return 0;
+    }
+    if label.text().as_str() != text {
+        label.set_text(text);
+    }
+    let layout = label.layout();
+    let byte_index = char_byte_index(text, cursor_chars) as i32;
+    let mut x = layout.index_to_line_x(byte_index, false).1;
+    let full_w = layout.pixel_size().0;
+    if x <= 0 && cursor_chars > 0 {
+        let prefix: String = text.chars().take(cursor_chars).collect();
+        layout.set_text(&prefix);
+        x = layout.pixel_size().0;
+        layout.set_text(text);
+    }
+    x.max(0).min(full_w.max(0))
+}
+
 fn search_text_push(text: &str, ch: char) -> String {
     let mut out = text.to_string();
     out.push(ch);
@@ -1684,13 +1751,12 @@ fn kind_edit_viewport(
     text: &str,
     cursor: usize,
     max_width: i32,
-) -> (String, i32) {
+) -> (String, usize) {
     if text.is_empty() {
         return (String::new(), 0);
     }
     let chars: Vec<char> = text.chars().collect();
     let cursor = cursor.min(chars.len());
-    let margin_cap = (max_width - SEARCH_CARET_WIDTH - SEARCH_CARET_GAP).max(0);
 
     let mut scroll_start = cursor;
     let mut scroll_end = cursor;
@@ -1717,15 +1783,7 @@ fn kind_edit_viewport(
     }
 
     let visible: String = chars[scroll_start..scroll_end].iter().collect();
-    let prefix: String = chars[scroll_start..cursor].iter().collect();
-    let margin = if prefix.is_empty() {
-        0
-    } else {
-        (measure(&prefix) + SEARCH_CARET_GAP)
-            .min(margin_cap)
-            .max(0)
-    };
-    (visible, margin)
+    (visible, scroll_start)
 }
 
 fn visible_clip_indices(clips: &[Clip], filter: &str) -> Vec<usize> {
@@ -2553,17 +2611,24 @@ mod tests {
     fn kind_edit_viewport_scrolls_long_text_to_the_cursor() {
         let measure = |s: &str| s.chars().count() as i32;
         let text = "abcdefghijklmnopqrstuvwxyz";
-        let (visible, margin) = kind_edit_viewport(measure, text, 0, 10);
+        let (visible, start) = kind_edit_viewport(measure, text, 0, 10);
         assert_eq!(visible, "abcdefghij");
-        assert_eq!(margin, 0);
+        assert_eq!(start, 0);
 
-        let (visible, margin) = kind_edit_viewport(measure, text, text.len(), 10);
+        let (visible, start) = kind_edit_viewport(measure, text, text.len(), 10);
         assert_eq!(visible, "qrstuvwxyz");
-        assert_eq!(margin, 7);
+        assert_eq!(start, 16);
 
-        let (visible, margin) = kind_edit_viewport(measure, text, 13, 10);
+        let (visible, start) = kind_edit_viewport(measure, text, 13, 10);
         assert_eq!(visible, "ijklmnopqr");
-        assert_eq!(margin, 6);
+        assert_eq!(start, 8);
+    }
+
+    #[test]
+    fn char_byte_index_matches_rust_char_offsets() {
+        assert_eq!(char_byte_index("hello", 0), 0);
+        assert_eq!(char_byte_index("hello", 5), 5);
+        assert_eq!(char_byte_index("é", 1), 2);
     }
 
     #[test]

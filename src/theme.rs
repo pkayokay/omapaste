@@ -211,12 +211,19 @@ popover, popover.background, popover contents {{
   border-radius: 0;
   min-height: 28px;
   padding: 0 8px;
-  border: 1px solid alpha({fg}, 0.08);
+  border: none;
+  box-shadow: none;
+  outline: 1px solid alpha({fg}, 0.08);
+  outline-offset: -1px;
   font-size: 13px;
 }}
 
+.op-search-slot {{
+  min-height: 28px;
+}}
+
 .op-search-active {{
-  border-color: {accent};
+  outline-color: {accent};
 }}
 
 .op-search-field {{
