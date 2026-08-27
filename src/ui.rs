@@ -33,6 +33,7 @@ const ANIM_DURATION: f64 = 0.220;
 const CARD_DRAG_THRESHOLD_PX: i32 = 24;
 const SEARCH_CARET_WIDTH: i32 = 2;
 const SEARCH_CARET_GAP: i32 = 1;
+const KIND_CARET_HEIGHT: i32 = 14;
 
 const SHORTCUTS: &[(&str, &str)] = &[
     ("← →", "Select"),
@@ -58,6 +59,10 @@ struct UiState {
     drag_panel_hidden: bool,
     search_blink_id: Option<glib::SourceId>,
     kind_edit_index: Option<usize>,
+    kind_edit_text: String,
+    kind_edit_anchor: usize,
+    kind_edit_cursor: usize,
+    kind_edit_blink_id: Option<glib::SourceId>,
 }
 
 pub struct Overlay {
@@ -358,6 +363,10 @@ impl Overlay {
                 drag_panel_hidden: false,
                 search_blink_id: None,
                 kind_edit_index: None,
+                kind_edit_text: String::new(),
+                kind_edit_anchor: 0,
+                kind_edit_cursor: 0,
+                kind_edit_blink_id: None,
             }),
         });
         ov.sync_search_chrome();
@@ -495,7 +504,7 @@ impl Overlay {
     fn apply_theme(&self) {
         let theme = load_theme();
         let extra = format!(
-            "\n.op-card {{\n  min-width: {CARD_WIDTH}px;\n  min-height: {CARD_HEIGHT}px;\n}}\n"
+            "\n.op-card {{\n  min-width: {CARD_WIDTH}px;\n  max-width: {CARD_WIDTH}px;\n  min-height: {CARD_HEIGHT}px;\n}}\n"
         );
         self.css.load_from_string(&(css_for(&theme) + &extra));
         if let Some(display) = gdk::Display::default() {
@@ -825,17 +834,16 @@ impl Overlay {
     fn bind_kind_label_edits(self: &Rc<Self>) {
         let cards = self.state.borrow().cards.clone();
         for (index, card) in cards.into_iter().enumerate() {
-            let Some(kind_widget) = find_css(card.upcast_ref(), "op-kind") else {
+            let Some(header) = find_css(card.upcast_ref(), "op-card-header").and_then(|w| {
+                w.downcast::<gtk::Box>().ok()
+            }) else {
                 continue;
             };
-            let Ok(kind) = kind_widget.downcast::<gtk::Label>() else {
-                continue;
-            };
-            self.attach_kind_label_gesture(&kind, index);
+            self.attach_header_rename_gesture(&header, index);
         }
     }
 
-    fn attach_kind_label_gesture(self: &Rc<Self>, kind: &gtk::Label, index: usize) {
+    fn attach_header_rename_gesture(self: &Rc<Self>, header: &gtk::Box, index: usize) {
         let gesture = gtk::GestureClick::new();
         gesture.set_button(0);
         gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -846,7 +854,7 @@ impl Overlay {
                 this.start_kind_edit(index);
             }
         });
-        kind.add_controller(gesture);
+        header.add_controller(gesture);
     }
 
     fn start_kind_edit(self: &Rc<Self>, index: usize) {
@@ -868,33 +876,33 @@ impl Overlay {
             };
             (card, clip)
         };
-        let Some(kind_widget) = find_css(card.upcast_ref(), "op-kind") else {
+        let Some(header) = find_css(card.upcast_ref(), "op-card-header")
+            .and_then(|w| w.downcast::<gtk::Box>().ok())
+        else {
+            return;
+        };
+        let Some(kind_widget) = find_css(header.upcast_ref(), "op-kind") else {
             return;
         };
         let Ok(kind) = kind_widget.downcast::<gtk::Label>() else {
             return;
         };
-        let Some(header) = kind.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) else {
-            return;
-        };
 
-        let entry = gtk::Entry::new();
-        entry.set_text(&clip.display_label());
-        entry.add_css_class("op-kind");
-        entry.add_css_class("op-kind-entry");
-        entry.set_has_frame(false);
-        entry.set_hexpand(true);
+        let text = clip.display_label();
+        let chars = text.chars().count();
+        let field = kind_edit_field(&text);
         header.remove(&kind);
-        header.prepend(&entry);
-        self.state.borrow_mut().kind_edit_index = Some(index);
+        header.prepend(&field);
+        {
+            let mut st = self.state.borrow_mut();
+            st.kind_edit_index = Some(index);
+            st.kind_edit_text = text;
+            st.kind_edit_anchor = 0;
+            st.kind_edit_cursor = chars;
+        }
+        self.sync_kind_edit_display(index);
+        self.start_kind_edit_blink();
 
-        entry.grab_focus();
-        entry.select_region(0, i32::MAX);
-
-        let this = Rc::clone(self);
-        entry.connect_activate(move |_| {
-            this.finish_kind_edit(index, false);
-        });
         let focus = gtk::EventControllerFocus::new();
         let this = Rc::clone(self);
         focus.connect_leave(move |_| {
@@ -903,7 +911,68 @@ impl Overlay {
                 this.finish_kind_edit(index, false);
             });
         });
-        entry.add_controller(focus);
+        field.add_controller(focus);
+    }
+
+    fn kind_edit_widgets(&self, index: usize) -> Option<(gtk::Label, gtk::Box)> {
+        let card = self.state.borrow().cards.get(index).cloned()?;
+        let header = find_css(card.upcast_ref(), "op-card-header")?;
+        let field = find_css(header.upcast_ref(), "op-kind-edit-field")?;
+        let label = find_css(field.upcast_ref(), "op-kind-edit-text")?
+            .downcast::<gtk::Label>()
+            .ok()?;
+        let caret = find_css(field.upcast_ref(), "op-search-caret")?
+            .downcast::<gtk::Box>()
+            .ok()?;
+        Some((label, caret))
+    }
+
+    fn sync_kind_edit_display(&self, index: usize) {
+        let Some((label, caret)) = self.kind_edit_widgets(index) else {
+            return;
+        };
+        let (text, cursor) = {
+            let st = self.state.borrow();
+            (st.kind_edit_text.clone(), st.kind_edit_cursor)
+        };
+        label.set_text(&text);
+        let margin = kind_caret_margin(&label, &text, cursor)
+            .min(PREVIEW_INNER_WIDTH - SEARCH_CARET_WIDTH - SEARCH_CARET_GAP)
+            .max(0);
+        caret.set_margin_start(margin);
+    }
+
+    fn start_kind_edit_blink(self: &Rc<Self>) {
+        self.stop_kind_edit_blink();
+        let this = Rc::clone(self);
+        let id = glib::timeout_add_local(Duration::from_millis(530), move || {
+            if this.state.borrow().kind_edit_index.is_none() {
+                this.state.borrow_mut().kind_edit_blink_id = None;
+                return glib::ControlFlow::Break;
+            }
+            if let Some(index) = this.state.borrow().kind_edit_index {
+                if let Some((_, caret)) = this.kind_edit_widgets(index) {
+                    caret.set_visible(!caret.is_visible());
+                }
+            }
+            glib::ControlFlow::Continue
+        });
+        self.state.borrow_mut().kind_edit_blink_id = Some(id);
+    }
+
+    fn stop_kind_edit_blink(&self) {
+        if let Some(id) = self.state.borrow_mut().kind_edit_blink_id.take() {
+            id.remove();
+        }
+    }
+
+    fn clear_kind_edit_state(&self) {
+        self.stop_kind_edit_blink();
+        let mut st = self.state.borrow_mut();
+        st.kind_edit_index = None;
+        st.kind_edit_text.clear();
+        st.kind_edit_anchor = 0;
+        st.kind_edit_cursor = 0;
     }
 
     fn finish_kind_edit(self: &Rc<Self>, index: usize, cancel: bool) {
@@ -911,25 +980,22 @@ impl Overlay {
             return;
         }
         let Some(card) = self.state.borrow().cards.get(index).cloned() else {
-            self.state.borrow_mut().kind_edit_index = None;
+            self.clear_kind_edit_state();
             return;
         };
         let Some(header) = find_css(card.upcast_ref(), "op-card-header")
             .and_then(|w| w.downcast::<gtk::Box>().ok())
         else {
-            self.state.borrow_mut().kind_edit_index = None;
+            self.clear_kind_edit_state();
             return;
         };
-        let entry = header
-            .first_child()
-            .and_then(|w| w.downcast::<gtk::Entry>().ok());
-        let Some(entry) = entry else {
-            self.state.borrow_mut().kind_edit_index = None;
+        let Some(field) = find_css(header.upcast_ref(), "op-kind-edit-field") else {
+            self.clear_kind_edit_state();
             return;
         };
 
         if !cancel {
-            let text = entry.text().to_string();
+            let text = self.state.borrow().kind_edit_text.clone();
             let label = text.trim();
             let value = if label.is_empty() { None } else { Some(label) };
             let clip_id = self.state.borrow().clips[index].id;
@@ -940,10 +1006,114 @@ impl Overlay {
 
         let display = self.state.borrow().clips[index].display_label();
         let kind = kind_label_widget(&display);
-        header.remove(&entry);
+        header.remove(&field);
         header.prepend(&kind);
-        self.attach_kind_label_gesture(&kind, index);
-        self.state.borrow_mut().kind_edit_index = None;
+        self.clear_kind_edit_state();
+    }
+
+    fn on_kind_edit_key(
+        self: &Rc<Self>,
+        index: usize,
+        key: gdk::Key,
+        state: gdk::ModifierType,
+    ) -> glib::Propagation {
+        if key == gdk::Key::Escape {
+            self.finish_kind_edit(index, true);
+            return glib::Propagation::Stop;
+        }
+        if key == gdk::Key::Return || key == gdk::Key::KP_Enter {
+            self.finish_kind_edit(index, false);
+            return glib::Propagation::Stop;
+        }
+        if self.state.borrow().kind_edit_index != Some(index) {
+            return glib::Propagation::Stop;
+        }
+        let (text, anchor, cursor) = {
+            let st = self.state.borrow();
+            (
+                st.kind_edit_text.clone(),
+                st.kind_edit_anchor,
+                st.kind_edit_cursor,
+            )
+        };
+        let (start, end) = kind_edit_range(anchor, cursor);
+        let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
+
+        if key == gdk::Key::BackSpace {
+            let alt = state.contains(gdk::ModifierType::ALT_MASK)
+                || state.contains(gdk::ModifierType::META_MASK);
+            let (next, pos) = if ctrl {
+                (String::new(), 0)
+            } else if alt {
+                entry_edit_backspace_word(&text, start, end)
+            } else {
+                entry_edit_backspace(&text, start, end)
+            };
+            self.set_kind_edit_text(index, next, pos);
+            return glib::Propagation::Stop;
+        }
+        if ctrl && key == gdk::Key::u {
+            self.set_kind_edit_text(index, String::new(), 0);
+            return glib::Propagation::Stop;
+        }
+        if key == gdk::Key::Delete || key == gdk::Key::KP_Delete {
+            let (next, pos) = entry_edit_delete(&text, start, end);
+            self.set_kind_edit_text(index, next, pos);
+            return glib::Propagation::Stop;
+        }
+        if key == gdk::Key::Left {
+            let pos = entry_edit_move(&text, start, end, cursor as i32, -1);
+            self.set_kind_edit_text(index, text, pos);
+            return glib::Propagation::Stop;
+        }
+        if key == gdk::Key::Right {
+            let pos = entry_edit_move(&text, start, end, cursor as i32, 1);
+            self.set_kind_edit_text(index, text, pos);
+            return glib::Propagation::Stop;
+        }
+        if key == gdk::Key::Home {
+            self.set_kind_edit_text(index, text, 0);
+            return glib::Propagation::Stop;
+        }
+        if key == gdk::Key::End {
+            let pos = text.chars().count();
+            self.set_kind_edit_text(index, text, pos);
+            return glib::Propagation::Stop;
+        }
+        if ctrl {
+            return glib::Propagation::Stop;
+        }
+        if let Some(ch) = key.to_unicode() {
+            if !ch.is_control() {
+                let (next, pos) = entry_edit_insert(&text, start, end, ch);
+                self.set_kind_edit_text(index, next, pos);
+                return glib::Propagation::Stop;
+            }
+        }
+        glib::Propagation::Stop
+    }
+
+    fn set_kind_edit_text(self: &Rc<Self>, index: usize, text: String, cursor: usize) {
+        {
+            let mut st = self.state.borrow_mut();
+            if st.kind_edit_index != Some(index) {
+                return;
+            }
+            st.kind_edit_text = text;
+            st.kind_edit_anchor = cursor;
+            st.kind_edit_cursor = cursor;
+        }
+        self.sync_kind_edit_display(index);
+        self.poke_kind_edit_caret();
+    }
+
+    fn poke_kind_edit_caret(self: &Rc<Self>) {
+        if let Some(index) = self.state.borrow().kind_edit_index {
+            if let Some((_, caret)) = self.kind_edit_widgets(index) {
+                caret.set_visible(true);
+            }
+        }
+        self.start_kind_edit_blink();
     }
 
     fn bind_card_clicks(self: &Rc<Self>) {
@@ -1189,11 +1359,7 @@ impl Overlay {
     fn on_key(self: &Rc<Self>, key: gdk::Key, state: gdk::ModifierType) -> glib::Propagation {
         let editing = self.state.borrow().kind_edit_index;
         if let Some(index) = editing {
-            if key == gdk::Key::Escape {
-                self.finish_kind_edit(index, true);
-                return glib::Propagation::Stop;
-            }
-            return glib::Propagation::Proceed;
+            return self.on_kind_edit_key(index, key, state);
         }
         let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
         let searching = self.is_searching();
@@ -1367,6 +1533,77 @@ fn search_text_pop_word(text: &str) -> String {
     chars.into_iter().collect()
 }
 
+fn entry_edit_backspace_word(text: &str, start: usize, end: usize) -> (String, usize) {
+    if start != end {
+        return entry_edit_backspace(text, start, end);
+    }
+    if start == 0 {
+        return (text.to_string(), 0);
+    }
+    let prefix: String = text.chars().take(start).collect();
+    let next_prefix = search_text_pop_word(&prefix);
+    let suffix: String = text.chars().skip(start).collect();
+    let new_pos = next_prefix.chars().count();
+    (format!("{next_prefix}{suffix}"), new_pos)
+}
+
+fn entry_edit_insert(text: &str, start: usize, end: usize, ch: char) -> (String, usize) {
+    let chars: Vec<char> = text.chars().collect();
+    let start = start.min(chars.len());
+    let end = end.min(chars.len());
+    let mut next: Vec<char> = chars[..start].to_vec();
+    next.push(ch);
+    next.extend_from_slice(&chars[end..]);
+    (next.into_iter().collect(), start + 1)
+}
+
+fn entry_edit_backspace(text: &str, start: usize, end: usize) -> (String, usize) {
+    let chars: Vec<char> = text.chars().collect();
+    if start != end {
+        let end = end.min(chars.len());
+        let mut next: Vec<char> = chars[..start.min(chars.len())].to_vec();
+        next.extend_from_slice(&chars[end..]);
+        (next.into_iter().collect(), start.min(chars.len()))
+    } else if start == 0 {
+        (text.to_string(), 0)
+    } else {
+        let mut next: Vec<char> = chars[..start - 1].to_vec();
+        next.extend_from_slice(&chars[start..]);
+        (next.into_iter().collect(), start - 1)
+    }
+}
+
+fn entry_edit_delete(text: &str, start: usize, end: usize) -> (String, usize) {
+    let chars: Vec<char> = text.chars().collect();
+    if start != end {
+        let end = end.min(chars.len());
+        let mut next: Vec<char> = chars[..start.min(chars.len())].to_vec();
+        next.extend_from_slice(&chars[end..]);
+        (next.into_iter().collect(), start.min(chars.len()))
+    } else if start >= chars.len() {
+        (text.to_string(), start)
+    } else {
+        let mut next: Vec<char> = chars[..start].to_vec();
+        next.extend_from_slice(&chars[start + 1..]);
+        (next.into_iter().collect(), start)
+    }
+}
+
+fn entry_edit_move(text: &str, start: usize, end: usize, cursor: i32, delta: i32) -> usize {
+    let len = text.chars().count();
+    if start != end {
+        if delta < 0 {
+            start.min(len)
+        } else {
+            end.min(len)
+        }
+    } else {
+        (cursor.max(0) as usize)
+            .saturating_add_signed(delta as isize)
+            .min(len)
+    }
+}
+
 fn clip_matches_filter(clip: &Clip, needle: &str) -> bool {
     clip.preview.to_lowercase().contains(needle)
         || clip
@@ -1399,8 +1636,54 @@ fn kind_label_widget(text: &str) -> gtk::Label {
     let kind = gtk::Label::new(Some(text));
     kind.set_xalign(0.0);
     kind.add_css_class("op-kind");
-    kind.set_overflow(Overflow::Visible);
+    kind.set_width_request(PREVIEW_INNER_WIDTH);
+    kind.set_hexpand(false);
+    kind.set_ellipsize(pango::EllipsizeMode::End);
+    kind.set_overflow(Overflow::Hidden);
     kind
+}
+
+fn kind_edit_field(text: &str) -> gtk::Overlay {
+    let field = gtk::Overlay::new();
+    field.add_css_class("op-kind-edit-field");
+    field.set_width_request(PREVIEW_INNER_WIDTH);
+    field.set_hexpand(false);
+    field.set_halign(Align::Fill);
+
+    let label = gtk::Label::new(Some(text));
+    label.add_css_class("op-kind");
+    label.add_css_class("op-kind-edit-text");
+    label.set_xalign(0.0);
+    label.set_yalign(0.5);
+    label.set_halign(Align::Start);
+    label.set_valign(Align::Center);
+    label.set_hexpand(true);
+    label.set_ellipsize(pango::EllipsizeMode::End);
+    label.set_overflow(Overflow::Hidden);
+    field.set_child(Some(&label));
+
+    let caret = gtk::Box::new(Orientation::Vertical, 0);
+    caret.add_css_class("op-search-caret");
+    caret.set_size_request(SEARCH_CARET_WIDTH, KIND_CARET_HEIGHT);
+    caret.set_halign(Align::Start);
+    caret.set_valign(Align::Center);
+    caret.set_visible(true);
+    field.add_overlay(&caret);
+
+    field
+}
+
+fn kind_edit_range(anchor: usize, cursor: usize) -> (usize, usize) {
+    if anchor != cursor {
+        (anchor.min(cursor), anchor.max(cursor))
+    } else {
+        (cursor, cursor)
+    }
+}
+
+fn kind_caret_margin(label: &gtk::Label, text: &str, cursor: usize) -> i32 {
+    let prefix: String = text.chars().take(cursor).collect();
+    search_text_width(label, &prefix) + SEARCH_CARET_GAP
 }
 
 fn visible_clip_indices(clips: &[Clip], filter: &str) -> Vec<usize> {
@@ -1705,7 +1988,7 @@ fn clip_card(clip: &Clip) -> gtk::Box {
 
     let header = gtk::Box::new(Orientation::Vertical, 2);
     header.add_css_class("op-card-header");
-    header.set_overflow(Overflow::Visible);
+    header.set_overflow(Overflow::Hidden);
     let kind = kind_label_widget(&clip.display_label());
     let age = gtk::Label::new(Some(&format_age(clip.last_used_at)));
     age.set_xalign(0.0);
@@ -2179,7 +2462,9 @@ mod tests {
         let kind = find_css(card.upcast_ref(), "op-kind").expect("kind label");
         let kind = kind.downcast::<gtk::Label>().expect("kind is a label");
         assert_eq!(kind.text().as_str(), "Text");
-        assert_eq!(kind.overflow(), Overflow::Visible);
+        assert_eq!(kind.ellipsize(), pango::EllipsizeMode::End);
+        assert_eq!(kind.width_request(), PREVIEW_INNER_WIDTH);
+        assert_eq!(kind.overflow(), Overflow::Hidden);
         assert_eq!(card.overflow(), Overflow::Visible);
         assert!(
             find_css(card.upcast_ref(), "op-chars").is_some(),
@@ -2205,6 +2490,21 @@ mod tests {
         clip.custom_label = Some("todo item".into());
         assert!(clip_matches_filter(&clip, "todo"));
         assert!(!clip_matches_filter(&clip, "world"));
+    }
+
+    #[test]
+    fn kind_edit_text_helpers_replace_selection_and_move() {
+        assert_eq!(kind_edit_range(0, 4), (0, 4));
+        assert_eq!(kind_edit_range(2, 2), (2, 2));
+        assert_eq!(entry_edit_insert("Text", 0, 4, 'N'), ("N".into(), 1));
+        assert_eq!(entry_edit_insert("ab", 1, 1, 'x'), ("axb".into(), 2));
+        assert_eq!(entry_edit_backspace("abc", 1, 1), ("bc".into(), 0));
+        assert_eq!(entry_edit_backspace("abc", 0, 2), ("c".into(), 0));
+        assert_eq!(entry_edit_backspace_word("hello world", 5, 5), (" world".into(), 0));
+        assert_eq!(entry_edit_backspace_word("hello world", 11, 11), ("hello".into(), 5));
+        assert_eq!(entry_edit_delete("abc", 1, 1), ("ac".into(), 1));
+        assert_eq!(entry_edit_move("abc", 0, 3, 0, 1), 3);
+        assert_eq!(entry_edit_move("abc", 0, 3, 0, -1), 0);
     }
 
     #[test]

@@ -273,6 +273,7 @@ popover, popover.background, popover contents {{
   background-color: alpha({fg}, 0.07);
   border-bottom: 1px solid alpha({fg}, 0.12);
   padding: 8px 12px 8px 12px;
+  min-height: 44px;
 }}
 
 .op-card-body {{
@@ -290,14 +291,11 @@ popover, popover.background, popover contents {{
   color: {fg};
   padding: 2px 0 4px 0;
   min-height: 22px;
+  min-width: 0;
 }}
 
-.op-kind-entry {{
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  padding: 2px 0 4px 0;
-  min-height: 22px;
+.op-kind-edit-field {{
+  min-width: 0;
 }}
 
 .op-preview {{
