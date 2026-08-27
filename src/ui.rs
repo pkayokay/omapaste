@@ -489,9 +489,10 @@ impl Overlay {
                     }
                     // Stay inside the bar: commit rename and let the card/button
                     // handler run (select, search, etc.).
-                    if widget_or_ancestor_has_class(&picked, "op-card")
-                        || widget_or_ancestor_has_class(&picked, "op-bar")
-                    {
+                    if kind_edit_click_stays_in_bar(
+                        widget_or_ancestor_has_class(&picked, "op-card"),
+                        widget_or_ancestor_has_class(&picked, "op-bar"),
+                    ) {
                         o.finish_kind_edit(editing, false);
                         o.state.borrow_mut().block_card_drag = true;
                         return;
@@ -1123,10 +1124,12 @@ impl Overlay {
         };
 
         if !cancel {
-            let text = self.state.borrow().kind_edit_text.clone();
+            let (text, clip_id) = {
+                let st = self.state.borrow();
+                (st.kind_edit_text.clone(), st.clips[index].id)
+            };
             let label = text.trim();
             let value = if label.is_empty() { None } else { Some(label) };
-            let clip_id = self.state.borrow().clips[index].id;
             if let Ok(Some(updated)) = self.store.set_custom_label(clip_id, value) {
                 self.state.borrow_mut().clips[index] = updated;
             }
@@ -1314,7 +1317,7 @@ impl Overlay {
                 // Drag hides the bar. Block while renaming, and for the rest of
                 // a press that just committed a rename (edit state is already clear).
                 let st = this_prep.state.borrow();
-                if st.kind_edit_index.is_some() || st.block_card_drag {
+                if !card_drag_prepare_allowed(st.kind_edit_index, st.block_card_drag) {
                     return None;
                 }
                 drop(st);
@@ -1421,7 +1424,8 @@ impl Overlay {
     }
 
     fn select(self: &Rc<Self>, index: usize, copy: bool) {
-        if let Some(editing) = self.state.borrow().kind_edit_index {
+        let editing = self.state.borrow().kind_edit_index;
+        if let Some(editing) = editing {
             if editing != index {
                 self.finish_kind_edit(editing, false);
             }
@@ -2062,6 +2066,51 @@ fn parse_hex_rgb_u16(hex: &str) -> (u16, u16, u16) {
     }
 }
 
+/// Whether a card drag may start. Renaming, or a press that just committed a
+/// rename, must not hide the bar via drag.
+fn card_drag_prepare_allowed(kind_edit_index: Option<usize>, block_card_drag: bool) -> bool {
+    kind_edit_index.is_none() && !block_card_drag
+}
+
+/// True when a rename-outside click landed on the bar interior (card or chrome)
+/// and should commit without dismissing.
+fn kind_edit_click_stays_in_bar(on_card: bool, on_bar: bool) -> bool {
+    on_card || on_bar
+}
+
+fn selection_byte_range(text: &str, sel_start: usize, sel_end: usize) -> Option<(u32, u32)> {
+    let len = text.chars().count();
+    let sel_start = sel_start.min(len);
+    let sel_end = sel_end.min(len);
+    if sel_start >= sel_end {
+        return None;
+    }
+    Some((
+        char_byte_index(text, sel_start) as u32,
+        char_byte_index(text, sel_end) as u32,
+    ))
+}
+
+fn build_selection_attrs(
+    text: &str,
+    sel_start: usize,
+    sel_end: usize,
+    rgb: (u16, u16, u16),
+) -> Option<pango::AttrList> {
+    let (start, end) = selection_byte_range(text, sel_start, sel_end)?;
+    let attrs = pango::AttrList::new();
+    let mut bg = pango::AttrColor::new_background(rgb.0, rgb.1, rgb.2).upcast();
+    bg.set_start_index(start);
+    bg.set_end_index(end);
+    attrs.insert(bg);
+    // Match the previous overlay alpha(~0.45) so the accent wash stays soft.
+    let mut alpha = pango::AttrInt::new_background_alpha((0.45 * 65535.0) as u16).upcast();
+    alpha.set_start_index(start);
+    alpha.set_end_index(end);
+    attrs.insert(alpha);
+    Some(attrs)
+}
+
 fn clear_label_selection_attrs(label: &gtk::Label) {
     label.set_attributes(None::<&pango::AttrList>);
 }
@@ -2073,26 +2122,11 @@ fn apply_label_selection_attrs(
     sel_end: usize,
     rgb: (u16, u16, u16),
 ) {
-    let len = text.chars().count();
-    let sel_start = sel_start.min(len);
-    let sel_end = sel_end.min(len);
-    if sel_start >= sel_end {
+    if let Some(attrs) = build_selection_attrs(text, sel_start, sel_end, rgb) {
+        label.set_attributes(Some(&attrs));
+    } else {
         clear_label_selection_attrs(label);
-        return;
     }
-    let start = char_byte_index(text, sel_start) as u32;
-    let end = char_byte_index(text, sel_end) as u32;
-    let attrs = pango::AttrList::new();
-    let mut bg = pango::AttrColor::new_background(rgb.0, rgb.1, rgb.2).upcast();
-    bg.set_start_index(start);
-    bg.set_end_index(end);
-    attrs.insert(bg);
-    // Match the previous overlay alpha(~0.45) so the accent wash stays soft.
-    let mut alpha = pango::AttrInt::new_background_alpha((0.45 * 65535.0) as u16).upcast();
-    alpha.set_start_index(start);
-    alpha.set_end_index(end);
-    attrs.insert(alpha);
-    label.set_attributes(Some(&attrs));
 }
 
 fn sync_text_selection_chrome(
@@ -2615,11 +2649,58 @@ impl Overlay {
     fn test_searching(&self) -> bool {
         self.is_searching()
     }
+
+    fn test_set_search_selection(&self, text: &str, anchor: usize, cursor: usize) {
+        self.set_search_selection(text, anchor, cursor, false);
+    }
+
+    fn test_search_anchor(&self) -> usize {
+        self.search_anchor()
+    }
+
+    fn test_search_cursor(&self) -> usize {
+        self.search_cursor()
+    }
+
+    fn test_search_label_has_selection(&self) -> bool {
+        self.search_label.attributes().is_some()
+    }
+
+    fn test_selected(&self) -> usize {
+        self.state.borrow().selected
+    }
+
+    fn test_kind_edit_index(&self) -> Option<usize> {
+        self.state.borrow().kind_edit_index
+    }
+
+    fn test_block_card_drag(&self) -> bool {
+        self.state.borrow().block_card_drag
+    }
+
+    fn test_set_block_card_drag(&self, block: bool) {
+        self.state.borrow_mut().block_card_drag = block;
+    }
+
+    fn test_start_kind_edit(self: &Rc<Self>, index: usize) {
+        self.start_kind_edit(index);
+    }
+
+    fn test_select(self: &Rc<Self>, index: usize) {
+        self.select(index, false);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ensure_gtk() -> bool {
+        if gtk::is_initialized() {
+            return true;
+        }
+        gtk::init().is_ok()
+    }
 
     #[test]
     fn age_labels() {
@@ -2895,7 +2976,7 @@ mod tests {
     #[test]
     #[ignore = "needs a display; run with cargo test -- --ignored --test-threads=1"]
     fn overlay_builds_and_opens_search() {
-        if gtk::init().is_err() {
+        if !ensure_gtk() {
             return;
         }
         let app = Application::builder()
@@ -2918,13 +2999,18 @@ mod tests {
                 None,
             )
             .unwrap();
-        let overlay = Overlay::new(&app, store, Config::default(), Rc::new(|_| {}));
+        let overlay = Overlay::new(&app, Rc::clone(&store), Config::default(), Rc::new(|_| {}));
         overlay.refresh(false);
         assert_eq!(overlay.test_clip_len(), 1);
         assert!(!overlay.test_searching());
         overlay.test_open_search();
         assert!(overlay.test_searching());
         assert!(!overlay.is_open());
+        let query = "hello filter";
+        overlay.test_set_search_selection(query, 0, query.chars().count());
+        assert_eq!(overlay.test_search_anchor(), 0);
+        assert_eq!(overlay.test_search_cursor(), query.chars().count());
+        assert!(overlay.test_search_label_has_selection());
         if overlay.layer_shell {
             let win: &gtk::Widget = overlay.window.upcast_ref();
             assert!(
@@ -2954,7 +3040,7 @@ mod tests {
             .downcast::<gtk::Label>()
             .expect("preview is a label");
         assert!(label.wraps());
-        assert_eq!(label.width_chars(), -1);
+        assert_eq!(label.width_chars(), 1);
         assert_eq!(label.max_width_chars(), PREVIEW_MAX_CHARS);
         assert_eq!(label.width_request(), PREVIEW_INNER_WIDTH);
         assert_eq!(label.natural_wrap_mode(), gtk::NaturalWrapMode::Word);
@@ -2999,6 +3085,32 @@ mod tests {
             find_css(card.upcast_ref(), "op-chars").is_some(),
             "footer with char count must stay on the card"
         );
+
+        store
+            .add(
+                "text",
+                "text/plain",
+                b"two",
+                Some("two"),
+                "two",
+                None,
+                "1d",
+                50,
+                None,
+            )
+            .unwrap();
+        overlay.refresh(false);
+        assert_eq!(overlay.test_clip_len(), 2);
+        overlay.test_start_kind_edit(0);
+        assert_eq!(overlay.test_kind_edit_index(), Some(0));
+        overlay.test_set_block_card_drag(true);
+        assert!(!card_drag_prepare_allowed(
+            overlay.test_kind_edit_index(),
+            overlay.test_block_card_drag()
+        ));
+        overlay.test_select(1);
+        assert_eq!(overlay.test_kind_edit_index(), None);
+        assert_eq!(overlay.test_selected(), 1);
     }
 
     #[test]
@@ -3029,6 +3141,56 @@ mod tests {
         assert_eq!(ellipsize_to_width(measure, "hello world", 1), "…");
         assert!(ellipsize_to_width(measure, "abcdefghij", 5).ends_with('…'));
         assert!(ellipsize_to_width(measure, "abcdefghij", 5).chars().count() <= 5);
+    }
+
+    #[test]
+    fn kind_edit_range_normalizes_reversed_selection() {
+        assert_eq!(kind_edit_range(0, 4), (0, 4));
+        assert_eq!(kind_edit_range(4, 0), (0, 4));
+        assert_eq!(kind_edit_range(2, 2), (2, 2));
+    }
+
+    #[test]
+    fn card_drag_prepare_allowed_blocks_while_renaming_or_after_commit_press() {
+        assert!(!card_drag_prepare_allowed(Some(0), false));
+        assert!(!card_drag_prepare_allowed(None, true));
+        assert!(card_drag_prepare_allowed(None, false));
+        assert!(!card_drag_prepare_allowed(Some(1), true));
+    }
+
+    #[test]
+    fn kind_edit_click_stays_in_bar_only_for_cards_and_chrome() {
+        assert!(kind_edit_click_stays_in_bar(true, false));
+        assert!(kind_edit_click_stays_in_bar(false, true));
+        assert!(kind_edit_click_stays_in_bar(true, true));
+        assert!(!kind_edit_click_stays_in_bar(false, false));
+    }
+
+    #[test]
+    fn selection_byte_range_spans_full_string_for_select_all() {
+        let text = "café 🦀";
+        let len = text.chars().count();
+        let (start, end) = selection_byte_range(text, 0, len).unwrap();
+        assert_eq!(start, 0);
+        assert_eq!(end, text.len() as u32);
+    }
+
+    #[test]
+    fn selection_byte_range_is_empty_for_collapsed_caret() {
+        assert!(selection_byte_range("hello", 2, 2).is_none());
+    }
+
+    #[test]
+    fn build_selection_attrs_is_none_for_collapsed_caret() {
+        assert!(build_selection_attrs("hello", 2, 2, (0x7a7a, 0xa2a2, 0xf7f7)).is_none());
+    }
+
+    #[test]
+    fn build_selection_attrs_is_some_for_non_empty_ranges() {
+        let text = "café 🦀";
+        let len = text.chars().count();
+        assert!(build_selection_attrs(text, 0, len, (0x7a7a, 0xa2a2, 0xf7f7)).is_some());
+        assert!(build_selection_attrs(text, 1, 4, (0x7a7a, 0xa2a2, 0xf7f7)).is_some());
     }
 
     #[test]
