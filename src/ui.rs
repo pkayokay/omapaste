@@ -652,15 +652,10 @@ impl Overlay {
             }
         }
         let total = clips.len();
-        let shown = visible.len();
-        if filter.trim().is_empty() {
-            self.count_label.set_text(&format!(
-                "{total} clip{}",
-                if total == 1 { "" } else { "s" }
-            ));
-        } else {
-            self.count_label.set_text(&format!("{shown} / {total}"));
-        }
+        self.count_label.set_text(&format!(
+            "{total} clip{}",
+            if total == 1 { "" } else { "s" }
+        ));
         if visible.is_empty() && !filter.trim().is_empty() {
             self.stack.set_visible_child_name("empty");
         } else {
@@ -935,10 +930,14 @@ impl Overlay {
             let st = self.state.borrow();
             (st.kind_edit_text.clone(), st.kind_edit_cursor)
         };
-        label.set_text(&text);
-        let margin = kind_caret_margin(&label, &text, cursor)
-            .min(PREVIEW_INNER_WIDTH - SEARCH_CARET_WIDTH - SEARCH_CARET_GAP)
-            .max(0);
+        let (visible, margin) = kind_edit_viewport(
+            |slice| search_text_width(&label, slice),
+            &text,
+            cursor,
+            PREVIEW_INNER_WIDTH,
+        );
+        label.set_ellipsize(pango::EllipsizeMode::None);
+        label.set_text(&visible);
         caret.set_margin_start(margin);
     }
 
@@ -1658,7 +1657,6 @@ fn kind_edit_field(text: &str) -> gtk::Overlay {
     label.set_halign(Align::Start);
     label.set_valign(Align::Center);
     label.set_hexpand(true);
-    label.set_ellipsize(pango::EllipsizeMode::End);
     label.set_overflow(Overflow::Hidden);
     field.set_child(Some(&label));
 
@@ -1681,9 +1679,53 @@ fn kind_edit_range(anchor: usize, cursor: usize) -> (usize, usize) {
     }
 }
 
-fn kind_caret_margin(label: &gtk::Label, text: &str, cursor: usize) -> i32 {
-    let prefix: String = text.chars().take(cursor).collect();
-    search_text_width(label, &prefix) + SEARCH_CARET_GAP
+fn kind_edit_viewport(
+    measure: impl Fn(&str) -> i32,
+    text: &str,
+    cursor: usize,
+    max_width: i32,
+) -> (String, i32) {
+    if text.is_empty() {
+        return (String::new(), 0);
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let cursor = cursor.min(chars.len());
+    let margin_cap = (max_width - SEARCH_CARET_WIDTH - SEARCH_CARET_GAP).max(0);
+
+    let mut scroll_start = cursor;
+    let mut scroll_end = cursor;
+    let mut best_len = 0usize;
+    let mut best_center_dist = usize::MAX;
+    for start in 0..=cursor {
+        for end in cursor..=chars.len() {
+            let len = end - start;
+            let slice: String = chars[start..end].iter().collect();
+            if measure(&slice) > max_width {
+                continue;
+            }
+            let center_dist = (cursor * 2).abs_diff(start + end);
+            if len > best_len || (len == best_len && center_dist < best_center_dist) {
+                scroll_start = start;
+                scroll_end = end;
+                best_len = len;
+                best_center_dist = center_dist;
+            }
+        }
+    }
+    if best_len == 0 {
+        scroll_end = (scroll_start + 1).min(chars.len());
+    }
+
+    let visible: String = chars[scroll_start..scroll_end].iter().collect();
+    let prefix: String = chars[scroll_start..cursor].iter().collect();
+    let margin = if prefix.is_empty() {
+        0
+    } else {
+        (measure(&prefix) + SEARCH_CARET_GAP)
+            .min(margin_cap)
+            .max(0)
+    };
+    (visible, margin)
 }
 
 fn visible_clip_indices(clips: &[Clip], filter: &str) -> Vec<usize> {
@@ -2505,6 +2547,23 @@ mod tests {
         assert_eq!(entry_edit_delete("abc", 1, 1), ("ac".into(), 1));
         assert_eq!(entry_edit_move("abc", 0, 3, 0, 1), 3);
         assert_eq!(entry_edit_move("abc", 0, 3, 0, -1), 0);
+    }
+
+    #[test]
+    fn kind_edit_viewport_scrolls_long_text_to_the_cursor() {
+        let measure = |s: &str| s.chars().count() as i32;
+        let text = "abcdefghijklmnopqrstuvwxyz";
+        let (visible, margin) = kind_edit_viewport(measure, text, 0, 10);
+        assert_eq!(visible, "abcdefghij");
+        assert_eq!(margin, 0);
+
+        let (visible, margin) = kind_edit_viewport(measure, text, text.len(), 10);
+        assert_eq!(visible, "qrstuvwxyz");
+        assert_eq!(margin, 7);
+
+        let (visible, margin) = kind_edit_viewport(measure, text, 13, 10);
+        assert_eq!(visible, "ijklmnopqr");
+        assert_eq!(margin, 6);
     }
 
     #[test]
