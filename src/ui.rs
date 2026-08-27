@@ -1796,6 +1796,44 @@ fn widget_or_ancestor_has_class(widget: &gtk::Widget, class: &str) -> bool {
     false
 }
 
+fn ellipsize_to_width(measure: impl Fn(&str) -> i32, text: &str, max_px: i32) -> String {
+    if text.is_empty() || max_px <= 0 {
+        return String::new();
+    }
+    if measure(text) <= max_px {
+        return text.to_string();
+    }
+    const ELL: &str = "…";
+    let ell_w = measure(ELL);
+    if ell_w >= max_px {
+        return ELL.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut best = 0usize;
+    let mut lo = 0usize;
+    let mut hi = chars.len();
+    while lo <= hi {
+        let mid = (lo + hi) / 2;
+        let mut candidate: String = chars[..mid].iter().collect();
+        candidate.push_str(ELL);
+        if measure(&candidate) <= max_px {
+            best = mid;
+            lo = mid + 1;
+        } else if mid == 0 {
+            break;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    if best == 0 {
+        ELL.to_string()
+    } else {
+        let mut out: String = chars[..best].iter().collect();
+        out.push_str(ELL);
+        out
+    }
+}
+
 fn kind_title_slot() -> gtk::Box {
     let slot = gtk::Box::new(Orientation::Horizontal, 0);
     slot.add_css_class("op-kind-slot");
@@ -1808,7 +1846,7 @@ fn kind_title_slot() -> gtk::Box {
 
 fn kind_title_field(text: &str) -> gtk::Overlay {
     // Same overlay chrome for display and edit so entering rename cannot
-    // shift padding or baseline (no Inscription↔Label swap).
+    // shift padding or baseline.
     let field = gtk::Overlay::new();
     field.add_css_class("op-kind-edit-field");
     field.set_hexpand(true);
@@ -1854,11 +1892,13 @@ fn show_kind_title_display(field: &gtk::Overlay, text: &str) {
     };
     caret.set_visible(false);
     caret.set_margin_start(0);
-    // Collapse natural width so the fixed slot owns card width; ellipsize
-    // paints "…" inside that allocation.
+    let max_px = (PREVIEW_INNER_WIDTH - SEARCH_CARET_WIDTH).max(1);
+    // GTK size_request is a minimum only — truncate to pixels so the label's
+    // natural width cannot stretch the card.
+    let shown = ellipsize_to_width(|s| search_text_width(&label, s), text, max_px);
     label.set_width_chars(1);
     label.set_ellipsize(pango::EllipsizeMode::End);
-    label.set_text(text);
+    label.set_text(&shown);
 }
 
 fn kind_label_widget(text: &str) -> gtk::Box {
@@ -2205,37 +2245,49 @@ fn ink_gap(px: i32) -> gtk::Box {
 }
 
 fn clip_card(clip: &Clip) -> gtk::Box {
-    let card = gtk::Box::new(Orientation::Vertical, 0);
-    card.add_css_class("op-card");
-    card.set_size_request(CARD_WIDTH, CARD_HEIGHT);
-    card.set_hexpand(false);
-    card.set_vexpand(false);
-    card.set_halign(Align::Start);
-    card.set_valign(Align::Center);
-    // Hidden + 1.25 scale rounds the clip inward and shaves the T.
-    card.set_overflow(Overflow::Visible);
+    // Fixed ignores children's natural size for its own request, so a long
+    // title cannot widen the tile in the card strip.
+    let shell = gtk::Box::new(Orientation::Vertical, 0);
+    shell.add_css_class("op-card");
+    shell.set_size_request(CARD_WIDTH, CARD_HEIGHT);
+    shell.set_hexpand(false);
+    shell.set_vexpand(false);
+    shell.set_halign(Align::Start);
+    shell.set_valign(Align::Center);
+    shell.set_overflow(Overflow::Hidden);
+
+    let fixed = gtk::Fixed::new();
+    fixed.set_size_request(CARD_WIDTH, CARD_HEIGHT);
+    fixed.set_overflow(Overflow::Hidden);
+
+    let content = gtk::Box::new(Orientation::Vertical, 0);
+    content.set_size_request(CARD_WIDTH, CARD_HEIGHT);
+    content.set_hexpand(false);
+    content.set_vexpand(false);
+    content.set_overflow(Overflow::Hidden);
 
     let header = gtk::Box::new(Orientation::Vertical, 2);
     header.add_css_class("op-card-header");
     header.set_overflow(Overflow::Hidden);
     header.set_hexpand(false);
-    header.set_size_request(CARD_WIDTH - 2 * CARD_BORDER, -1);
+    header.set_size_request(PREVIEW_INNER_WIDTH, -1);
     let kind = kind_label_widget(&clip.display_label());
     let age = gtk::Label::new(Some(&format_age(clip.last_used_at)));
     age.set_xalign(0.0);
     age.add_css_class("op-meta");
     age.set_ellipsize(pango::EllipsizeMode::End);
+    age.set_width_chars(1);
     age.set_max_width_chars(PREVIEW_MAX_CHARS);
     header.append(&kind);
     header.append(&age);
-    card.append(&header);
+    content.append(&header);
 
     let body = gtk::Box::new(Orientation::Vertical, 0);
     body.add_css_class("op-card-body");
     body.set_vexpand(true);
-    body.set_hexpand(true);
-    // Keep preview ink out of the footer; horizontal clip is avoided via width_request.
+    body.set_hexpand(false);
     body.set_overflow(Overflow::Hidden);
+    body.set_size_request(PREVIEW_INNER_WIDTH, -1);
     if clip.kind == "image" {
         if let Some(ref path) = clip.image_path {
             body.append(&image_preview(path));
@@ -2255,28 +2307,32 @@ fn clip_card(clip: &Clip) -> gtk::Box {
         label.set_ellipsize(pango::EllipsizeMode::End);
         label.set_lines(PREVIEW_LINES);
         label.add_css_class("op-preview");
-        // Wrap to the padded card in pixels. A ch-width request is wider than
-        // 210px here, so Overflow::Hidden was shaving trailing glyphs.
         label.set_width_request(PREVIEW_INNER_WIDTH);
+        label.set_width_chars(1);
         label.set_max_width_chars(PREVIEW_MAX_CHARS);
-        label.set_hexpand(true);
+        label.set_hexpand(false);
         label.set_vexpand(false);
-        label.set_overflow(Overflow::Visible);
+        label.set_overflow(Overflow::Hidden);
         body.append(&label);
     }
-    card.append(&body);
+    content.append(&body);
 
     let footer = gtk::Box::new(Orientation::Horizontal, 0);
     footer.add_css_class("op-card-footer");
     footer.set_vexpand(false);
+    footer.set_hexpand(false);
+    footer.set_size_request(PREVIEW_INNER_WIDTH, -1);
     let chars = gtk::Label::new(Some(&clip.format_chars()));
     chars.set_xalign(0.5);
     chars.add_css_class("op-chars");
     chars.set_halign(Align::Center);
     chars.set_hexpand(true);
     footer.append(&chars);
-    card.append(&footer);
-    card
+    content.append(&footer);
+
+    fixed.put(&content, 0.0, 0.0);
+    shell.append(&fixed);
+    shell
 }
 
 fn image_preview(path: &str) -> gtk::Widget {
@@ -2689,7 +2745,7 @@ mod tests {
         assert_eq!(label.max_width_chars(), PREVIEW_MAX_CHARS);
         assert_eq!(label.width_request(), PREVIEW_INNER_WIDTH);
         assert_eq!(label.natural_wrap_mode(), gtk::NaturalWrapMode::Word);
-        assert_eq!(label.overflow(), Overflow::Visible);
+        assert_eq!(label.overflow(), Overflow::Hidden);
         assert_eq!(label.yalign(), 0.0);
         assert!(!label.vexpands());
         assert_eq!(label.lines(), PREVIEW_LINES);
@@ -2712,15 +2768,20 @@ mod tests {
         };
         let long_card = clip_card(&long);
         assert_eq!(long_card.width_request(), CARD_WIDTH);
+        assert_eq!(long_card.overflow(), Overflow::Hidden);
         let long_slot =
             find_css(long_card.upcast_ref(), "op-kind-slot").expect("long kind slot");
         assert_eq!(long_slot.width_request(), PREVIEW_INNER_WIDTH);
         let long_kind = find_css(long_card.upcast_ref(), "op-kind-edit-text")
             .and_then(|w| w.downcast::<gtk::Label>().ok())
             .expect("long kind label");
-        assert_eq!(long_kind.width_chars(), 1);
-        assert_eq!(long_kind.ellipsize(), pango::EllipsizeMode::End);
-        assert_eq!(card.overflow(), Overflow::Visible);
+        assert!(
+            long_kind.text().ends_with('…'),
+            "long title should be pixel-truncated: {}",
+            long_kind.text()
+        );
+        assert!(long_kind.text().chars().count() < long.display_label().chars().count());
+        assert_eq!(card.overflow(), Overflow::Hidden);
         assert!(
             find_css(card.upcast_ref(), "op-chars").is_some(),
             "footer with char count must stay on the card"
@@ -2745,6 +2806,16 @@ mod tests {
         clip.custom_label = Some("todo item".into());
         assert!(clip_matches_filter(&clip, "todo"));
         assert!(!clip_matches_filter(&clip, "world"));
+    }
+
+    #[test]
+    fn ellipsize_to_width_fits_inside_the_pixel_budget() {
+        let measure = |s: &str| s.chars().count() as i32;
+        assert_eq!(ellipsize_to_width(measure, "hello", 10), "hello");
+        assert_eq!(ellipsize_to_width(measure, "hello world", 8), "hello w…");
+        assert_eq!(ellipsize_to_width(measure, "hello world", 1), "…");
+        assert!(ellipsize_to_width(measure, "abcdefghij", 5).ends_with('…'));
+        assert!(ellipsize_to_width(measure, "abcdefghij", 5).chars().count() <= 5);
     }
 
     #[test]
