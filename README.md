@@ -67,6 +67,8 @@ omapaste quit                # stop the daemon
 
 This plugin runs unsandboxed inside `omarchy-shell` and shells out to `omapaste`. History stays local in SQLite. Super+Ctrl+V remains Omarchy’s built-in clipboard overlay.
 
+Listing on [omarchyplugins.com](https://omarchyplugins.com/) is separate from install — see [docs/omarchy-marketplace.md](docs/omarchy-marketplace.md) for first-time submission and when to re-verify after a release.
+
 ### From source only
 
 ```bash
@@ -155,6 +157,8 @@ The bar’s help icon (next to shortcuts) opens that page. The shortcuts popover
 ## Development
 
 Contributor and agent notes (modules, tests, UI reload): [AGENTS.md](AGENTS.md).
+
+Omarchy marketplace listing and re-publish workflow: [docs/omarchy-marketplace.md](docs/omarchy-marketplace.md).
 
 ```bash
 cargo test
