@@ -83,7 +83,7 @@ omapaste quit && omapaste daemon
 
 ## Marketplace (optional)
 
-Only if you want [omarchyplugins.com](https://omarchyplugins.com/) to show the new version as verified:
+Only if you want [omarchyplugins.com](https://omarchyplugins.com/) to show the new version as verified. Omapaste is already listed; use the verification form for each new catalog snapshot:
 
 1. Use the commit SHA **of the release tag** (the version-bump commit).
 2. Open the [plugin verification form](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml).
@@ -91,7 +91,7 @@ Only if you want [omarchyplugins.com](https://omarchyplugins.com/) to show the n
 4. Plugin ID: `io.github.pkayokay.omapaste` · repo: `https://github.com/pkayokay/omapaste` · full 40-char SHA.
 5. After approval, update **Approved snapshot** in [omarchy-marketplace.md](omarchy-marketplace.md).
 
-Do not open a new submission issue — use verification only. Close a mistaken verification issue before opening a new one for the correct tag.
+Do not open a second submission issue. Close a mistaken verification issue before opening a new one for the correct tag.
 
 ## Quick reference
 

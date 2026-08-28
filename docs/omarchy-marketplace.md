@@ -10,8 +10,9 @@ The marketplace is **discovery and metadata**. Users still install and update fr
 | --- | --- |
 | Plugin ID | `io.github.pkayokay.omapaste` |
 | Marketplace repo | [HANCORE-linux/omarchy-plugin-marketplace](https://github.com/HANCORE-linux/omarchy-plugin-marketplace) |
-| Listing issue | [#2893](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/2893) |
-| Approved snapshot | `0cfb8159d7352516f4f4ae645aee25285213989a` (v0.2.0, pending [#2944](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/2944)) |
+| Listing issue | [#2893](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/2893) (closed) |
+| Catalog page | [omarchyplugins.com](https://omarchyplugins.com/plugin.html?id=io.github.pkayokay.omapaste) |
+| Approved snapshot | `f78585e73c3b5817693e232847a9b920c981f15e` (v0.2.0, listed 2026-08-28, **manual setup**) |
 
 Update the **Approved snapshot** line in this file after each successful catalog promotion.
 
@@ -32,8 +33,8 @@ Do **not** open a second submission issue for the same plugin. Update the existi
 See [omarchy-plugin.md](omarchy-plugin.md) for install, update, and remove. Short version:
 
 ```bash
-./install.sh --hypr          # optional: Hyprland bind + autostart
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
+~/.config/omarchy/plugins/io.github.pkayokay.omapaste/install.sh --hypr
 ```
 
 Update after a release: `git pull` in the plugin dir, `./install.sh`, `omapaste quit && omapaste daemon`.
@@ -43,14 +44,17 @@ Update after a release: `git pull` in the plugin dir, `./install.sh`, `omapaste 
 | Goal | Marketplace issue? |
 | --- | --- |
 | Ship a new GitHub release / tag | **No** — push, tag, users `git pull` + rebuild |
-| Update the catalog page (version, preview, verified badge on a new commit) | **Yes** — verification form |
-| Fix a broken listing or failed publication | Comment on the existing issue; do not resubmit |
+| Update the catalog page (version, preview, verified badge on a new commit) | **Yes** — verification form (below) |
+| Enable standard `omarchy plugin add` install command on the catalog | **Yes** — verification form, “enable standard installation” (after code supports it) |
+| Fix a broken listing | Comment on [#2893](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/2893) or open a verification issue; do not resubmit |
 
 If `main` moves ahead of the approved snapshot without re-verification, the site may show **Update unverified**. The listing stays; only the verified metadata is stale.
 
 ## Re-publish the catalog after a release
 
-See [release.md](release.md) for the full version-bump and tag workflow. When the catalog should match a new commit:
+See [release.md](release.md) for the full version-bump and tag workflow.
+
+When the catalog should match a new commit:
 
 1. Open the [plugin verification form](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml).
 2. Choose **Verify and publish a newer upstream commit**.
