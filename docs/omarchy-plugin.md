@@ -22,7 +22,16 @@ sudo pacman -S --needed rust gtk4 gtk4-layer-shell wl-clipboard wtype pkgconf py
 
 ## Install (plugin + binary)
 
-`omarchy plugin add` clones the QML wrapper only — it does **not** build Rust.
+`omarchy plugin add` clones the Quattro wrapper only — it does **not** build Rust. Run `install.sh` after adding the plugin (or from a git clone).
+
+### From Omarchy or the marketplace
+
+```bash
+omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
+~/.config/omarchy/plugins/io.github.pkayokay.omapaste/install.sh --hypr
+```
+
+### From GitHub
 
 ```bash
 git clone https://github.com/pkayokay/omapaste.git
@@ -101,4 +110,4 @@ Enabling the plugin also starts the daemon via `Service.qml`.
 
 ## Marketplace listing
 
-Listing on [omarchyplugins.com](https://omarchyplugins.com/) is separate from install. See [omarchy-marketplace.md](omarchy-marketplace.md) for first-time submission and when to re-verify the catalog after a release.
+Listed on [omarchyplugins.com](https://omarchyplugins.com/plugin.html?id=io.github.pkayokay.omapaste) (manual setup — `install.sh` is still required after `omarchy plugin add`). Maintainer workflow: [omarchy-marketplace.md](omarchy-marketplace.md).

@@ -21,7 +21,18 @@ MIT licensed. Source and issues: https://github.com/pkayokay/omapaste
 
 ## Install
 
-**Omarchy plugin (recommended):** build the binary, enable the Quattro plugin, optional Hyprland bind.
+Listed on the [Omarchy plugin marketplace](https://omarchyplugins.com/plugin.html?id=io.github.pkayokay.omapaste). `omarchy plugin add` installs the Quattro wrapper only — run `install.sh` once to build the binary.
+
+**From Omarchy (recommended):**
+
+```bash
+omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
+~/.config/omarchy/plugins/io.github.pkayokay.omapaste/install.sh --hypr
+```
+
+`--hypr` is optional: binds **Super+Shift+V**, autostarts the daemon, and adds a Hyprland layer rule.
+
+**From GitHub:**
 
 ```bash
 git clone https://github.com/pkayokay/omapaste.git
@@ -30,11 +41,9 @@ cd omapaste
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
 ```
 
-Full steps, update, remove, and summon: [docs/omarchy-plugin.md](docs/omarchy-plugin.md).
+Full steps, update, remove, and summon: [docs/omarchy-plugin.md](docs/omarchy-plugin.md). Config, keep time, data paths, and CLI: [docs/configuration.md](docs/configuration.md).
 
-**Binary only:** same `./install.sh --hypr`, then `omapaste daemon`. See the plugin doc for requirements and `--hypr` vs plugin-only behavior.
-
-Config, keep time, data paths, and CLI: [docs/configuration.md](docs/configuration.md).
+**Binary only (no plugin):** `./install.sh --hypr`, then `omapaste daemon`.
 
 ## Usage
 
