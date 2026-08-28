@@ -278,14 +278,6 @@ impl Overlay {
         issues_btn.add_css_class("op-icon-btn");
         issues_btn.set_valign(Align::Center);
         issues_btn.set_can_focus(false);
-        issues_btn.connect_clicked(|_| {
-            let _ = std::process::Command::new("xdg-open")
-                .arg(ISSUES_URL)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn();
-        });
 
         header.append(&brand);
         header.append(&search_stack);
@@ -461,6 +453,18 @@ impl Overlay {
         {
             let pop = shortcuts.clone();
             shortcuts_btn.connect_clicked(move |_| pop.popup());
+        }
+        {
+            let o = ov.clone();
+            issues_btn.connect_clicked(move |_| {
+                let _ = std::process::Command::new("xdg-open")
+                    .arg(ISSUES_URL)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn();
+                o.hide_rc();
+            });
         }
         {
             let keys = gtk::EventControllerKey::new();

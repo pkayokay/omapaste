@@ -64,7 +64,7 @@ Full steps, update, remove, and summon: [docs/omarchy-plugin.md](docs/omarchy-pl
 | Double-click kind label | Rename |
 | Type or click the magnifying glass | Search |
 | Keyboard icon | Shortcut list |
-| Help icon | Open the GitHub issue tracker |
+| Help icon | Open the GitHub issue tracker and close |
 | Esc | Close shortcuts, then search, then the bar |
 
 ## Why not the built-in Omarchy clipboard?
