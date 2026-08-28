@@ -38,7 +38,9 @@ If a release mixes features and fixes, bump **minor**. Use **patch** only when n
    omarchy plugin validate "$(pwd)"
    ```
 
-## Commit, tag, push
+## Commit, tag, push, and GitHub release
+
+A release is **tag + GitHub Release**, not just the git tag. Users browsing [github.com/pkayokay/omapaste/releases](https://github.com/pkayokay/omapaste/releases) only see GitHub Releases.
 
 ```bash
 git add Cargo.toml manifest.json CHANGELOG.md   # plus any doc/UI files
@@ -48,15 +50,28 @@ git push origin main
 git push origin vX.Y.Z
 ```
 
+Then publish the GitHub Release from that tag (paste the new `CHANGELOG.md` section for the notes):
+
+```bash
+gh release create vX.Y.Z --title "vX.Y.Z" --notes "$(sed -n '/^## X.Y.Z$/,/^## /p' CHANGELOG.md | sed '$d')"
+```
+
+Or write the notes manually:
+
+```bash
+gh release create vX.Y.Z --title "vX.Y.Z" --notes-file /path/to/notes.md
+```
+
+GitHub Releases do **not** affect the Omarchy marketplace — catalog verification uses the **commit SHA** of the version-bump commit, not release metadata.
+
 To replace a bad tag (only before users depend on it):
 
 ```bash
 git tag -d vX.Y.Z
 git push origin :refs/tags/vX.Y.Z
-# fix, commit, then tag again
+gh release delete vX.Y.Z --yes   # if you already published one
+# fix, commit, then tag and gh release create again
 ```
-
-Optional: create a GitHub Release from the tag (`gh release create vX.Y.Z --notes-file ...` or paste the CHANGELOG section).
 
 ## Load locally
 
