@@ -11,7 +11,7 @@ The marketplace is **discovery and metadata**. Users still install and update fr
 | Plugin ID | `io.github.pkayokay.omapaste` |
 | Marketplace repo | [HANCORE-linux/omarchy-plugin-marketplace](https://github.com/HANCORE-linux/omarchy-plugin-marketplace) |
 | Listing issue | [#2893](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/2893) |
-| Approved snapshot | `pending` (v0.2.0) |
+| Approved snapshot | `0cfb8159d7352516f4f4ae645aee25285213989a` (v0.2.0, pending [#2944](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/2944)) |
 
 Update the **Approved snapshot** line in this file after each successful catalog promotion.
 
