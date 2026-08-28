@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Ctrl+C copies the highlighted clip and closes the bar
+- Security hardening for marketplace review: streamed `wl-paste` capture, private file permissions, safe drag temps, `cargo build --locked` in `install.sh`
+- User docs split into `docs/` (plugin install, configuration, marketplace workflow); README slimmed
+
 ## 0.1.0
 
 - Paste-style bottom clipboard history bar for Omarchy / Hyprland
