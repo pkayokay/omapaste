@@ -45,6 +45,7 @@ Config, keep time, data paths, and CLI: [docs/configuration.md](docs/configurati
 | Super+Shift+V | Toggle the bar |
 | ← → | Select a clip (also copies it) |
 | Click a card | Select and copy |
+| Ctrl+C | Copy the highlighted clip and close |
 | Enter or double-click | Paste into the previous window and close |
 | Ctrl+1–9 | Paste that card |
 | Delete or Backspace | Remove the highlighted clip (Backspace edits search if it has text) |

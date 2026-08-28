@@ -39,6 +39,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("← →", "Select"),
     ("Enter", "Paste"),
     ("Click", "Copy"),
+    ("Ctrl+C", "Copy & close"),
     ("Drag", "Drop to paste"),
     ("Del", "Delete"),
     ("Ctrl+K", "Keep"),
@@ -1607,6 +1608,11 @@ impl Overlay {
                 self.paste_selected();
                 glib::Propagation::Stop
             }
+            KeyIntent::Copy => {
+                self.copy_selected();
+                self.hide_rc();
+                glib::Propagation::Stop
+            }
             KeyIntent::Left => {
                 self.move_selection(-1, true);
                 glib::Propagation::Stop
@@ -2230,6 +2236,7 @@ fn visible_clip_indices(clips: &[Clip], filter: &str) -> Vec<usize> {
 enum KeyIntent {
     Dismiss,
     Paste,
+    Copy,
     Left,
     Right,
     Home,
@@ -2269,6 +2276,9 @@ fn key_intent(key: gdk::Key, ctrl: bool, searching: bool) -> KeyIntent {
     }
     if ctrl && (key == gdk::Key::k || key == gdk::Key::K) {
         return KeyIntent::CycleKeep;
+    }
+    if ctrl && (key == gdk::Key::c || key == gdk::Key::C) && !searching {
+        return KeyIntent::Copy;
     }
     if ctrl && (key == gdk::Key::f || key == gdk::Key::F || key == gdk::Key::slash) {
         return KeyIntent::OpenSearch;
@@ -2777,6 +2787,7 @@ mod tests {
         let keys: Vec<_> = SHORTCUTS.iter().map(|(k, _)| *k).collect();
         assert!(keys.contains(&"← →"));
         assert!(keys.contains(&"Enter"));
+        assert!(keys.contains(&"Ctrl+C"));
         assert!(keys.contains(&"Del"));
         assert!(keys.contains(&"Ctrl+K"));
         assert!(keys.contains(&"Esc"));
@@ -2935,6 +2946,9 @@ mod tests {
         );
         assert_eq!(key_intent(gdk::Key::k, true, false), KeyIntent::CycleKeep);
         assert_eq!(key_intent(gdk::Key::K, true, false), KeyIntent::CycleKeep);
+        assert_eq!(key_intent(gdk::Key::c, true, false), KeyIntent::Copy);
+        assert_eq!(key_intent(gdk::Key::C, true, false), KeyIntent::Copy);
+        assert_eq!(key_intent(gdk::Key::c, true, true), KeyIntent::Other);
         assert_eq!(key_intent(gdk::Key::f, true, false), KeyIntent::OpenSearch);
         assert_eq!(
             key_intent(gdk::Key::slash, true, true),
