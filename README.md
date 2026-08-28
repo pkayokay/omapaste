@@ -48,7 +48,7 @@ Full steps, update, remove, and summon: [docs/omarchy-plugin.md](docs/omarchy-pl
 
 ## Usage
 
-**Super+Shift+V** needs `./install.sh --hypr` (or your own Hyprland bind).
+**Super+Shift+V** needs `./install.sh --hypr` (or your own Hyprland bind). [Custom toggle key](docs/configuration.md#toggle-shortcut).
 
 | Input | Action |
 | --- | --- |

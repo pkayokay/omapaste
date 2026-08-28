@@ -24,7 +24,20 @@ paste_keys = "auto"      # auto | shift-insert | ctrl-v
 
 `paste_keys = "auto"` sends Shift+Insert in terminals and Ctrl+V everywhere else, matching Omarchy’s universal clipboard.
 
-There is no `toggle_key` in config — change the Hyprland bind in `~/.config/hypr/bindings.lua` (or use `./install.sh --hypr` once).
+## Toggle shortcut
+
+Omapaste does **not** register a global hotkey and there is no `toggle_key` in `config.toml`. On Hyprland, bind `omapaste toggle` yourself:
+
+```lua
+-- ~/.config/hypr/bindings.lua
+o.bind("SUPER + ALT + V", "Omapaste", "omapaste toggle")
+```
+
+`./install.sh --hypr` adds **Super+Shift+V** once (with a `.bak.*` backup). Edit or remove that line to use a different key.
+
+Without a Hyprland bind: `omapaste toggle` from a terminal, script, or your compositor’s shortcut system. With the Quattro plugin enabled, the shell can also summon the overlay (`omarchy-shell shell summon io.github.pkayokay.omapaste '{}'`).
+
+**In-bar shortcuts** (search, paste, Ctrl+K, drag, etc.) are fixed — see the keyboard icon in the bar.
 
 ## Keep time
 
