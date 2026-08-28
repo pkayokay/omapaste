@@ -67,6 +67,55 @@ When the catalog should match a new commit:
 
 CLI alternative: see [SUBMISSION.md § Update an existing listing](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/blob/main/SUBMISSION.md#update-an-existing-listing).
 
+## Agent: re-verify the catalog
+
+**README.md** is for end users (install, usage, remove). Agents use this file plus [release.md](release.md).
+
+Omapaste is **already listed**. After a release is tagged on `main`, open a **plugin update** verification issue — not a new submission ([#2893](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/2893) is closed).
+
+1. Push `main` and tag `vX.Y.Z` (see [release.md](release.md)).
+2. Copy the **full 40-character SHA** of the `Release vX.Y.Z.` commit: `git rev-parse HEAD` on that commit.
+3. Create the issue with **exact form headings** — no extra sections (no “Release notes”). Extra headings fail validation.
+4. Wait for bot `validated` + maintainer `approved-and-verified`.
+5. Update **Approved snapshot** at the top of this file.
+
+Title: `[Verify]: Omapaste`
+
+Body (replace `TARGET_SHA`):
+
+```markdown
+### Verification action
+
+Verify and publish a newer upstream commit
+
+### Plugin ID
+
+io.github.pkayokay.omapaste
+
+### Repository URL
+
+https://github.com/pkayokay/omapaste
+
+### Target commit
+
+TARGET_SHA
+
+### Verification acknowledgment
+
+- [x] I understand that only the exact target commit can become a verified marketplace snapshot and that verification is not a security audit.
+```
+
+Do **not** add `### Standard installation acknowledgment` unless requesting removal of manual-setup (standard install command on the catalog). Omapaste is listed as **manual setup** — `install.sh` is still required after `omarchy plugin add`.
+
+```bash
+gh issue create \
+  --repo HANCORE-linux/omarchy-plugin-marketplace \
+  --title "[Verify]: Omapaste" \
+  --body-file /tmp/omapaste-verify.md
+```
+
+Pre-flight: `omarchy plugin validate "$(pwd)"`, `manifest.json` version matches the release, README install/remove instructions current.
+
 ## Maintainer notes worth repeating on updates
 
 - `omarchy plugin add` installs the Quattro wrapper only; the `omapaste` binary must be on `PATH` (`./install.sh`).

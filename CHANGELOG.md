@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Report-issue icon closes the bar after opening the GitHub issue tracker
+- README: marketplace-first install, v0.2.0 feature list, Hyprland toggle customization link
+- Docs: contributor vs user split, listing live on omarchyplugins.com, agent re-verify workflow for catalog updates
+
 ## 0.2.0
 
 - Drag-and-drop from clip cards into other apps
