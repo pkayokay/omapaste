@@ -1,10 +1,8 @@
 # Omarchy plugin marketplace
 
-How omapaste is listed on [omarchyplugins.com](https://omarchyplugins.com/), and what to do when we ship a new release.
+Optional catalog metadata on [omarchyplugins.com](https://omarchyplugins.com/). **Independent of releases** — shipping a version does not require any step here. Users install and update from this GitHub repo.
 
-The marketplace is **discovery and metadata**. Users still install and update from this GitHub repo. A catalog update is optional for day-to-day use.
-
-**Agent note:** If the user says *re-verify on omarchyplugins* / *update the marketplace listing*, read [§ Agent: re-verify the catalog](#agent-re-verify-the-catalog) below. Do not use README.md for that workflow.
+**Agent note:** If the user says *re-verify on omarchyplugins* / *update the marketplace listing*, read [§ Agent: re-verify the catalog](#agent-re-verify-the-catalog) below. Do not use README.md or [release.md](release.md) for that workflow unless the release is not pushed yet.
 
 ## Plugin identity
 
@@ -73,7 +71,7 @@ CLI alternative: see [SUBMISSION.md § Update an existing listing](https://githu
 
 **README.md** is for end users (install, usage, remove). Agents use this file plus [release.md](release.md).
 
-Omapaste is **already listed**. After a release is tagged on `main`, open a **plugin update** verification issue — not a new submission ([#2893](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/2893) is closed).
+Omapaste is **already listed**. Only when the user asks to update the catalog — not on every release. After `main` is pushed, open a **plugin update** verification issue — not a new submission ([#2893](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/2893) is closed).
 
 1. Push `main` and tag `vX.Y.Z` (see [release.md](release.md)).
 2. Copy the **full 40-character SHA** of the `Release vX.Y.Z.` commit: `git rev-parse HEAD` on that commit.

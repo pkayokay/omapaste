@@ -1,6 +1,8 @@
 # Release checklist
 
-Steps for shipping a new omapaste version. GitHub install/update does **not** require a marketplace issue; catalog re-verify is optional (see [omarchy-marketplace.md](omarchy-marketplace.md)).
+Steps for shipping a new omapaste version.
+
+**Releases are not tied to the marketplace.** Tag, push, and GitHub Release are enough for users (`git pull`, `./install.sh`). [omarchyplugins.com](https://omarchyplugins.com/) re-verify is a separate, optional step — only when you want the catalog page updated (see [omarchy-marketplace.md](omarchy-marketplace.md)).
 
 ## Versioning (Option A)
 
@@ -83,7 +85,9 @@ omapaste quit && omapaste daemon
 
 ## Marketplace (optional)
 
-Only if you want [omarchyplugins.com](https://omarchyplugins.com/) to show the new version as verified. Omapaste is already listed; use the verification form for each new catalog snapshot:
+**Not part of the release checklist** unless you explicitly want the catalog updated. Skip this section for normal releases.
+
+Only if you want [omarchyplugins.com](https://omarchyplugins.com/) to show the new version as verified:
 
 1. Use the commit SHA **of the release tag** (the version-bump commit).
 2. Open the [plugin verification form](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml).
