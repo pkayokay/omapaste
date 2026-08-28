@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Development contract for omapaste. User-facing docs: [README.md](README.md), [docs/](docs/).
+Development contract for omapaste. User-facing docs: [README.md](README.md), [docs/](docs/) (start with [docs/release.md](docs/release.md) for shipping a version).
 
 Omapaste is a **Rust GTK4** clipboard-history bar for Omarchy / Hyprland. It is **one GTK application**: the daemon owns the window and the clipboard watcher. `toggle` / `show` / `hide` / `quit` are extra invocations of the same binary; they talk to that process over the session bus (`io.github.pkayokay.omapaste`). A second `omapaste daemon` does not replace a running binary — quit first.
 

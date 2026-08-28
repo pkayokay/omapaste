@@ -66,6 +66,7 @@ Omarchy’s Super+Ctrl+V picker is a vertical list that copies onto the clipboar
 | [docs/omarchy-plugin.md](docs/omarchy-plugin.md) | Plugin install, update, remove, Hyprland bind |
 | [docs/configuration.md](docs/configuration.md) | `config.toml`, keep time, runtime files, CLI |
 | [docs/omarchy-marketplace.md](docs/omarchy-marketplace.md) | Catalog listing and re-verify after releases |
+| [docs/release.md](docs/release.md) | Version bump, changelog, tag, and release checklist |
 | [AGENTS.md](AGENTS.md) | Development, tests, module map |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 

@@ -1,10 +1,15 @@
 # Changelog
 
-## 0.1.1
+## 0.2.0
 
+- Drag-and-drop from clip cards into other apps
+- Custom search field with caret, stable header layout, and in-place card filtering
+- Double-click rename for clip kind labels with edit shortcuts and scroll
+- Ctrl+A select-all with visible highlight in search and rename
 - Ctrl+C copies the highlighted clip and closes the bar
-- Security hardening for marketplace review: streamed `wl-paste` capture, private file permissions, safe drag temps, `cargo build --locked` in `install.sh`
-- User docs split into `docs/` (plugin install, configuration, marketplace workflow); README slimmed
+- PNG sample images on first launch
+- Security hardening: streamed `wl-paste` capture, private file permissions, safe drag temps, `cargo build --locked` in `install.sh`
+- User docs in `docs/` (plugin install, configuration, release checklist, marketplace workflow)
 
 ## 0.1.0
 

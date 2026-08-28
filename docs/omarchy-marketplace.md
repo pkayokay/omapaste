@@ -11,7 +11,7 @@ The marketplace is **discovery and metadata**. Users still install and update fr
 | Plugin ID | `io.github.pkayokay.omapaste` |
 | Marketplace repo | [HANCORE-linux/omarchy-plugin-marketplace](https://github.com/HANCORE-linux/omarchy-plugin-marketplace) |
 | Listing issue | [#2893](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/2893) |
-| Approved snapshot | `27ff9a182c565abd918ce350537ea3779d841715` (v0.1.1, pending re-verify) |
+| Approved snapshot | `pending` (v0.2.0) |
 
 Update the **Approved snapshot** line in this file after each successful catalog promotion.
 
@@ -50,19 +50,16 @@ If `main` moves ahead of the approved snapshot without re-verification, the site
 
 ## Re-publish the catalog after a release
 
-Do this when we want omarchyplugins.com to match a new commit (not required for installs from GitHub).
+See [release.md](release.md) for the full version-bump and tag workflow. When the catalog should match a new commit:
 
-1. Bump `version` in `manifest.json` (and `Cargo.toml` if it is a real app release).
-2. Push to `main` (or the branch users install from).
-3. Run `cargo test` and `omarchy plugin validate` on the repo.
-4. Open the [plugin verification form](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml).
-5. Choose **Verify and publish a newer upstream commit**.
-6. Fill in:
+1. Open the [plugin verification form](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml).
+2. Choose **Verify and publish a newer upstream commit**.
+3. Fill in:
    - Plugin ID: `io.github.pkayokay.omapaste`
    - Repository: `https://github.com/pkayokay/omapaste`
    - Full 40-character SHA of the commit to promote
-7. Wait for bot checks and maintainer `approved-and-verified`.
-8. Update **Approved snapshot** at the top of this file.
+4. Wait for bot checks and maintainer `approved-and-verified`.
+5. Update **Approved snapshot** at the top of this file.
 
 CLI alternative: see [SUBMISSION.md § Update an existing listing](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/blob/main/SUBMISSION.md#update-an-existing-listing).
 
