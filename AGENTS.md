@@ -113,8 +113,6 @@ When you add behavior, add a test next to it.
 4. `./install.sh && omapaste quit && omapaste daemon`.
 5. Super+Shift+V. For UI: search open/close (cards stay put), selected contrast, shortcuts popover, Esc (shortcuts → search → bar).
 
-v0.1 does **not** include pinboards, categories, drag-and-drop, or sync.
-
 ## Fixing a bug
 
 1. Reproduce with Super+Shift+V (or the CLI). `RUST_LOG=debug`.
