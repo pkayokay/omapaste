@@ -45,6 +45,8 @@ Full steps, update, remove, and summon: [docs/omarchy-plugin.md](docs/omarchy-pl
 
 **Binary only (no plugin):** `./install.sh --hypr`, then `omapaste daemon`.
 
+**Contributing?** See [AGENTS.md](AGENTS.md) for tests and the dev loop — not install.
+
 ## Usage
 
 | Input | Action |

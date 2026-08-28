@@ -6,24 +6,17 @@ Omapaste is a **Rust GTK4** clipboard-history bar for Omarchy / Hyprland. It is 
 
 ## First-time setup
 
-Needs a Wayland/Hyprland session to run the bar. `cargo test` does not.
+Install omapaste per [README.md](README.md) (clone, `./install.sh`, optional plugin). You need a Wayland/Hyprland session to exercise the bar; `cargo test` does not.
 
-On Omarchy / Arch:
+Build dependencies on Omarchy / Arch: [docs/omarchy-plugin.md](docs/omarchy-plugin.md#requirements). Then:
 
 ```bash
-sudo pacman -S --needed rust gtk4 gtk4-layer-shell wl-clipboard wtype pkgconf python
 git clone https://github.com/pkayokay/omapaste.git
 cd omapaste
 cargo test
-./install.sh --hypr
-omapaste daemon          # or reboot; --hypr adds Hyprland autostart
 ```
 
-`--hypr` binds **Super+Shift+V**, autostarts `omapaste daemon`, and adds a layer rule so Hyprland does not fade the bar (it slides itself). Super+Ctrl+V stays on Omarchy's picker.
-
-Without `--hypr`, `./install.sh` only puts the binary in `~/.local/bin`. That directory must be on `PATH`. Bind `omapaste toggle` yourself.
-
-Python is used only by `install.sh --hypr` to edit `~/.config/hypr/*.lua`. The app is not Python.
+If the binary is not on `PATH` yet: `./install.sh` (add `--hypr` for Super+Shift+V bind and autostart).
 
 ## Daily loop
 
