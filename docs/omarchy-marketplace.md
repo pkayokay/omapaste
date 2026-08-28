@@ -29,23 +29,14 @@ Do **not** open a second submission issue for the same plugin. Update the existi
 
 ## What users actually do (no marketplace step)
 
-Install:
+See [omarchy-plugin.md](omarchy-plugin.md) for install, update, and remove. Short version:
 
 ```bash
 ./install.sh --hypr          # optional: Hyprland bind + autostart
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
 ```
 
-Update after we push a release:
-
-```bash
-cd ~/.config/omarchy/plugins/io.github.pkayokay.omapaste
-git pull
-./install.sh
-omapaste quit && omapaste daemon
-```
-
-`omarchy plugin add` clones QML only; `./install.sh` builds the Rust binary.
+Update after a release: `git pull` in the plugin dir, `./install.sh`, `omapaste quit && omapaste daemon`.
 
 ## When to open a marketplace issue again
 
