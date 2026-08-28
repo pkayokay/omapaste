@@ -57,6 +57,7 @@ struct UiState {
     cards: Vec<gtk::Box>,
     target: Option<TargetWindow>,
     drag_panel_hidden: bool,
+    drag_temp_path: Option<PathBuf>,
     search_blink_id: Option<glib::SourceId>,
     search_cursor: usize,
     search_anchor: usize,
@@ -395,6 +396,7 @@ impl Overlay {
                 cards: Vec::new(),
                 target: None,
                 drag_panel_hidden: false,
+                drag_temp_path: None,
                 search_blink_id: None,
                 search_cursor: 0,
                 search_anchor: 0,
@@ -890,6 +892,9 @@ impl Overlay {
 
     fn finish_card_drag(self: &Rc<Self>, cancelled: bool) {
         let hidden = self.state.borrow().drag_panel_hidden;
+        if let Some(path) = self.state.borrow_mut().drag_temp_path.take() {
+            let _ = std::fs::remove_file(path);
+        }
         self.state.borrow_mut().drag_panel_hidden = false;
         if should_reopen_after_drag(cancelled, hidden) {
             self.reopen_after_drag_rc();
@@ -964,9 +969,9 @@ impl Overlay {
     fn bind_kind_label_edits(self: &Rc<Self>) {
         let cards = self.state.borrow().cards.clone();
         for (index, card) in cards.into_iter().enumerate() {
-            let Some(header) = find_css(card.upcast_ref(), "op-card-header").and_then(|w| {
-                w.downcast::<gtk::Box>().ok()
-            }) else {
+            let Some(header) = find_css(card.upcast_ref(), "op-card-header")
+                .and_then(|w| w.downcast::<gtk::Box>().ok())
+            else {
                 continue;
             };
             self.attach_header_rename_gesture(&header, index);
@@ -1058,8 +1063,12 @@ impl Overlay {
         label.set_ellipsize(pango::EllipsizeMode::None);
         label.set_text(&visible);
         let (sel_start, sel_end) = kind_edit_range(anchor, cursor);
-        let vis_sel_start = sel_start.saturating_sub(scroll_start).min(visible.chars().count());
-        let vis_sel_end = sel_end.saturating_sub(scroll_start).min(visible.chars().count());
+        let vis_sel_start = sel_start
+            .saturating_sub(scroll_start)
+            .min(visible.chars().count());
+        let vis_sel_end = sel_end
+            .saturating_sub(scroll_start)
+            .min(visible.chars().count());
         let cursor_in_visible = cursor.saturating_sub(scroll_start);
         sync_text_selection_chrome(
             &label,
@@ -1322,6 +1331,9 @@ impl Overlay {
                 }
                 drop(st);
                 let payload = clip_drag_payload(&clip_for_prepare, |p| std::fs::read(p).ok())?;
+                if let Some(ref path) = payload.drag_path {
+                    this_prep.state.borrow_mut().drag_temp_path = Some(path.clone());
+                }
                 Some(clip_drag_provider(&payload))
             });
 
@@ -2026,8 +2038,8 @@ fn show_kind_title_display(field: &gtk::Overlay, text: &str) {
     else {
         return;
     };
-    let Some(caret) = find_css(field.upcast_ref(), "op-search-caret")
-        .and_then(|w| w.downcast::<gtk::Box>().ok())
+    let Some(caret) =
+        find_css(field.upcast_ref(), "op-search-caret").and_then(|w| w.downcast::<gtk::Box>().ok())
     else {
         return;
     };
@@ -2055,9 +2067,7 @@ fn is_select_all_key(key: gdk::Key, ctrl: bool) -> bool {
 
 fn parse_hex_rgb_u16(hex: &str) -> (u16, u16, u16) {
     let h = hex.trim().trim_start_matches('#');
-    let byte = |i: usize| {
-        u8::from_str_radix(h.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0)
-    };
+    let byte = |i: usize| u8::from_str_radix(h.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0);
     let widen = |b: u8| ((b as u16) << 8) | b as u16;
     if h.len() >= 6 {
         (widen(byte(0)), widen(byte(2)), widen(byte(4)))
@@ -2387,9 +2397,16 @@ struct ClipDragPayload {
     drag_path: Option<PathBuf>,
 }
 
-fn image_drag_png_path(bytes: &[u8], digest: &str) -> Option<PathBuf> {
-    let path = std::env::temp_dir().join(format!("omapaste-drag-{digest}.png"));
-    std::fs::write(&path, bytes).ok()?;
+fn image_drag_png_path(bytes: &[u8]) -> Option<PathBuf> {
+    crate::paths::cleanup_drag_temps();
+    let dir = crate::paths::runtime_dir();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    let pid = std::process::id();
+    let path = dir.join(format!("drag-{stamp}-{pid}.png"));
+    crate::secure_fs::write_private_new_file(&path, bytes).ok()?;
     Some(path)
 }
 
@@ -2401,8 +2418,7 @@ fn clip_drag_payload(
         let path = clip.image_path.as_ref()?;
         let payload = read_image(Path::new(path))?;
         let mime = clip.mime.clone();
-        let digest = content_hash("image", &mime, &payload);
-        let drag_path = image_drag_png_path(&payload, &digest);
+        let drag_path = image_drag_png_path(&payload);
         Some(ClipDragPayload {
             mime,
             bytes: payload,
@@ -2694,6 +2710,7 @@ impl Overlay {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
 
     fn ensure_gtk() -> bool {
         if gtk::is_initialized() {
@@ -2806,7 +2823,11 @@ mod tests {
 
     #[test]
     fn clip_drag_payload_image() {
+        let _lock = crate::env_lock();
+        #[cfg(unix)]
+        use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
+        env::set_var("XDG_RUNTIME_DIR", dir.path());
         let path = dir.path().join("clip.png");
         let png = include_bytes!("../share/sample-images/sample-red.png");
         std::fs::write(&path, png).unwrap();
@@ -2816,8 +2837,24 @@ mod tests {
         assert_eq!(payload.mime, "image/png");
         assert_eq!(payload.bytes, png.as_slice());
         assert!(payload.drag_path.as_ref().is_some_and(|p| p.exists()));
+        #[cfg(unix)]
+        assert_eq!(
+            payload
+                .drag_path
+                .as_ref()
+                .unwrap()
+                .metadata()
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
         assert_eq!(text_drag_mime_types().len(), 2);
         assert_eq!(image_drag_provider_parts(&payload), 4);
+        crate::paths::cleanup_drag_temps();
+        assert!(payload.drag_path.as_ref().is_none_or(|p| !p.exists()));
+        env::remove_var("XDG_RUNTIME_DIR");
     }
 
     #[test]
@@ -3068,8 +3105,7 @@ mod tests {
         let long_card = clip_card(&long);
         assert_eq!(long_card.width_request(), CARD_WIDTH);
         assert_eq!(long_card.overflow(), Overflow::Hidden);
-        let long_slot =
-            find_css(long_card.upcast_ref(), "op-kind-slot").expect("long kind slot");
+        let long_slot = find_css(long_card.upcast_ref(), "op-kind-slot").expect("long kind slot");
         assert_eq!(long_slot.width_request(), PREVIEW_INNER_WIDTH);
         let long_kind = find_css(long_card.upcast_ref(), "op-kind-edit-text")
             .and_then(|w| w.downcast::<gtk::Label>().ok())
@@ -3224,8 +3260,14 @@ mod tests {
         assert_eq!(entry_edit_insert("ab", 1, 1, 'x'), ("axb".into(), 2));
         assert_eq!(entry_edit_backspace("abc", 1, 1), ("bc".into(), 0));
         assert_eq!(entry_edit_backspace("abc", 0, 2), ("c".into(), 0));
-        assert_eq!(entry_edit_backspace_word("hello world", 5, 5), (" world".into(), 0));
-        assert_eq!(entry_edit_backspace_word("hello world", 11, 11), ("hello".into(), 5));
+        assert_eq!(
+            entry_edit_backspace_word("hello world", 5, 5),
+            (" world".into(), 0)
+        );
+        assert_eq!(
+            entry_edit_backspace_word("hello world", 11, 11),
+            ("hello".into(), 5)
+        );
         assert_eq!(entry_edit_delete("abc", 1, 1), ("ac".into(), 1));
         assert_eq!(entry_edit_move("abc", 0, 3, 0, 1), 3);
         assert_eq!(entry_edit_move("abc", 0, 3, 0, -1), 0);

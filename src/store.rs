@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -187,14 +188,12 @@ impl Clip {
 
 pub struct Store {
     conn: Connection,
+    _db_file: File,
 }
 
 impl Store {
     pub fn open(path: &Path) -> rusqlite::Result<Self> {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let conn = Connection::open(path)?;
+        let (conn, db_file) = crate::secure_fs::open_sqlite_connection(path)?;
         conn.execute_batch(
             "
             PRAGMA journal_mode=WAL;
@@ -217,8 +216,13 @@ impl Store {
             CREATE INDEX IF NOT EXISTS idx_clips_keep_until ON clips(keep_until);
             ",
         )?;
+        crate::secure_fs::harden_sqlite_files(path)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
         migrate(&conn)?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            _db_file: db_file,
+        })
     }
 
     pub fn add(
@@ -402,7 +406,8 @@ impl Store {
     }
 
     pub fn seed(&self, images_dir: &Path) -> rusqlite::Result<()> {
-        std::fs::create_dir_all(images_dir).ok();
+        crate::secure_fs::ensure_private_dir(images_dir)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
         let now = now_secs();
         let mut order = 0i64;
         for &(text, keep) in SEED_CLIPS {
@@ -424,7 +429,7 @@ impl Store {
             let digest = content_hash("image", mime, payload);
             let image_path = images_dir.join(format!("{digest}.bin"));
             if !image_path.exists() {
-                std::fs::write(&image_path, payload)
+                crate::secure_fs::write_private_file_if_missing(&image_path, payload)
                     .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
             }
             self.add(
@@ -646,6 +651,28 @@ mod tests {
             store.list("", Some(2)).unwrap()[0].text.as_deref(),
             Some("kept")
         );
+    }
+
+    #[test]
+    fn open_hardens_sqlite_wal_and_shm() {
+        #[cfg(unix)]
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("history.sqlite");
+        let store = Store::open(&path).unwrap();
+        add(&store, "touch", "1d", 1);
+        let base = path.to_string_lossy();
+        for sidecar in [format!("{base}-wal"), format!("{base}-shm")] {
+            let sidecar_path = std::path::Path::new(&sidecar);
+            if sidecar_path.exists() {
+                #[cfg(unix)]
+                assert_eq!(
+                    sidecar_path.metadata().unwrap().permissions().mode() & 0o777,
+                    0o600
+                );
+            }
+        }
     }
 
     #[test]

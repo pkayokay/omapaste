@@ -40,7 +40,7 @@ mkdir -p "$DEST/sample-images"
 cp -a "$SRC/share/sample-images/." "$DEST/sample-images/"
 
 echo "Building omapaste (release)..."
-cargo build --release --manifest-path "$SRC/Cargo.toml"
+cargo build --release --locked --manifest-path "$SRC/Cargo.toml"
 install -Dm755 "$SRC/target/release/omapaste" "$BIN/omapaste"
 
 echo "Installed omapaste to $BIN/omapaste"

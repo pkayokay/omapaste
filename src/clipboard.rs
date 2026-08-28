@@ -1,13 +1,17 @@
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::config::Config;
 use crate::store::{content_hash, make_preview, Clip, Store};
+
+const PASTE_TIMEOUT: Duration = Duration::from_secs(15);
+const LIST_TYPES_MAX_BYTES: i64 = 64 * 1024;
 
 const SECRET_HINTS: &[&str] = &[
     "x-kde-passwordmanagerhint",
@@ -124,16 +128,25 @@ fn capture(
     let types = list_types();
     let (mime, payload) = if label.starts_with("image") {
         let mut mime = first_image_mime(&types).unwrap_or("image/png").to_string();
-        let mut payload = paste_bytes(&["wl-paste", "--type", &mime, "--no-newline"]);
+        let mut payload = paste_bytes(
+            &["wl-paste", "--type", &mime, "--no-newline"],
+            config.max_bytes,
+        );
         if payload.is_empty() {
-            payload = paste_bytes(&["wl-paste", "--type", "image/png", "--no-newline"]);
+            payload = paste_bytes(
+                &["wl-paste", "--type", "image/png", "--no-newline"],
+                config.max_bytes,
+            );
             mime = "image/png".into();
         }
         (mime, payload)
     } else {
         (
             "text/plain".into(),
-            paste_bytes(&["wl-paste", "--type", "text", "--no-newline"]),
+            paste_bytes(
+                &["wl-paste", "--type", "text", "--no-newline"],
+                config.max_bytes,
+            ),
         )
     };
     ingest(
@@ -172,9 +185,8 @@ fn ingest(
             return Ok(None);
         }
         let image_path = images_dir.join(format!("{digest}.bin"));
-        if !image_path.exists() {
-            std::fs::write(&image_path, payload).map_err(|e| e.to_string())?;
-        }
+        crate::secure_fs::write_private_file_if_missing(&image_path, payload)
+            .map_err(|e| e.to_string())?;
         return store
             .add(
                 "image",
@@ -222,18 +234,10 @@ fn should_ignore(digest: &str, ignore_hash: &Mutex<Option<(String, i64)>>) -> bo
 }
 
 fn list_types() -> Vec<String> {
-    let output = Command::new("wl-paste")
-        .arg("--list-types")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output();
-    let Ok(out) = output else {
-        return Vec::new();
-    };
-    if !out.status.success() {
-        return Vec::new();
-    }
-    parse_mime_list(&String::from_utf8_lossy(&out.stdout))
+    paste_bytes(&["wl-paste", "--list-types"], LIST_TYPES_MAX_BYTES)
+        .get(..)
+        .map(|bytes| parse_mime_list(&String::from_utf8_lossy(bytes)))
+        .unwrap_or_default()
 }
 
 fn parse_mime_list(stdout: &str) -> Vec<String> {
@@ -258,16 +262,66 @@ fn first_image_mime(types: &[String]) -> Option<&str> {
         .find(|t| t.starts_with("image/"))
 }
 
-fn paste_bytes(argv: &[&str]) -> Vec<u8> {
-    Command::new(argv[0])
+enum ReadLimitOutcome {
+    Ok(Vec<u8>),
+    TooLarge,
+}
+
+fn read_stdout_limited(mut stdout: impl Read, max_bytes: usize) -> ReadLimitOutcome {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        match stdout.read(&mut chunk) {
+            Ok(0) => return ReadLimitOutcome::Ok(buf),
+            Ok(n) => {
+                if buf.len() + n > max_bytes {
+                    return ReadLimitOutcome::TooLarge;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return ReadLimitOutcome::TooLarge,
+        }
+    }
+}
+
+fn paste_bytes(argv: &[&str], max_bytes: i64) -> Vec<u8> {
+    command_stdout_bytes(argv, max_bytes, PASTE_TIMEOUT).unwrap_or_default()
+}
+
+fn command_stdout_bytes(argv: &[&str], max_bytes: i64, timeout: Duration) -> Option<Vec<u8>> {
+    let max = max_bytes.max(0) as usize;
+    if max == 0 {
+        return None;
+    }
+    let mut child = Command::new(argv[0])
         .args(&argv[1..])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| o.stdout)
-        .unwrap_or_default()
+        .spawn()
+        .ok()?;
+    let stdout = child.stdout.take()?;
+    let handle = thread::spawn(move || read_stdout_limited(stdout, max));
+    let started = Instant::now();
+    while !handle.is_finished() {
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    match handle.join().ok()? {
+        ReadLimitOutcome::Ok(buf) => {
+            let status = child.wait().ok()?;
+            status.success().then_some(buf)
+        }
+        ReadLimitOutcome::TooLarge => {
+            let _ = child.kill();
+            let _ = child.wait();
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -478,7 +532,46 @@ mod tests {
             list_types(),
             vec!["text/plain".to_string(), "image/png".to_string()]
         );
-        assert_eq!(paste_bytes(&["wl-paste", "--type", "text"]), b"hello");
+        assert_eq!(paste_bytes(&["wl-paste", "--type", "text"], 1024), b"hello");
+        std::env::set_var("PATH", old);
+    }
+
+    #[test]
+    fn paste_bytes_times_out_slow_child() {
+        let _lock = crate::env_lock();
+        let dir = tempfile::TempDir::new().unwrap();
+        let bin = dir.path().join("wl-paste");
+        std::fs::write(&bin, "#!/bin/sh\nsleep 30\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let old = std::env::var("PATH").unwrap_or_default();
+        std::env::set_var("PATH", format!("{}:{old}", dir.path().display()));
+        let started = Instant::now();
+        assert!(command_stdout_bytes(
+            &["wl-paste", "--type", "text"],
+            1024,
+            Duration::from_millis(200)
+        )
+        .is_none());
+        assert!(started.elapsed() < Duration::from_secs(2));
+        std::env::set_var("PATH", old);
+    }
+
+    #[test]
+    fn paste_bytes_rejects_oversized_output() {
+        let _lock = crate::env_lock();
+        let dir = tempfile::TempDir::new().unwrap();
+        let bin = dir.path().join("wl-paste");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\n# emit 500 bytes\nhead -c 500 /dev/zero | tr '\\0' 'a'\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let old = std::env::var("PATH").unwrap_or_default();
+        std::env::set_var("PATH", format!("{}:{old}", dir.path().display()));
+        assert!(paste_bytes(&["wl-paste", "--type", "text"], 100).is_empty());
         std::env::set_var("PATH", old);
     }
 }

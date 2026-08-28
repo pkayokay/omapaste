@@ -7,7 +7,7 @@ use gtk4::{gio, glib, Application};
 use crate::clipboard::ClipboardWatcher;
 use crate::config::load_config;
 use crate::paste::current_window;
-use crate::paths::{db_path, images_dir, APP_ID, VERSION};
+use crate::paths::{cleanup_drag_temps, db_path, images_dir, APP_ID, VERSION};
 use crate::store::Store;
 use crate::theme::watch_paths;
 use crate::ui::Overlay;
@@ -33,6 +33,7 @@ pub fn run(startup_command: &str) -> glib::ExitCode {
         let state = state.clone();
         move |app| {
             let hold = app.hold();
+            cleanup_drag_temps();
             let config = load_config(None);
             let db = db_path();
             let fresh = !db.exists();

@@ -31,13 +31,13 @@ pub fn xdg_data_home() -> PathBuf {
 
 pub fn config_dir() -> PathBuf {
     let path = xdg_config_home().join(APP_NAME);
-    let _ = std::fs::create_dir_all(&path);
+    let _ = crate::secure_fs::ensure_private_dir(&path);
     path
 }
 
 pub fn data_dir() -> PathBuf {
     let path = xdg_data_home().join(APP_NAME);
-    let _ = std::fs::create_dir_all(&path);
+    let _ = crate::secure_fs::ensure_private_dir(&path);
     path
 }
 
@@ -51,8 +51,20 @@ pub fn db_path() -> PathBuf {
 
 pub fn images_dir() -> PathBuf {
     let path = data_dir().join("images");
-    let _ = std::fs::create_dir_all(&path);
+    let _ = crate::secure_fs::ensure_private_dir(&path);
     path
+}
+
+pub fn runtime_dir() -> PathBuf {
+    let path = env::var_os("XDG_RUNTIME_DIR")
+        .map(|runtime| PathBuf::from(runtime).join(APP_NAME))
+        .unwrap_or_else(|| data_dir().join("runtime"));
+    let _ = crate::secure_fs::ensure_private_dir(&path);
+    path
+}
+
+pub fn cleanup_drag_temps() {
+    let _ = crate::secure_fs::remove_files_with_prefix(&runtime_dir(), "drag-");
 }
 
 pub fn omarchy_theme_dir() -> PathBuf {
@@ -67,6 +79,8 @@ pub fn omarchy_theme_name_path() -> PathBuf {
 mod tests {
     use super::*;
     use std::env;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn constants() {
@@ -98,6 +112,61 @@ mod tests {
         match old_data {
             Some(v) => env::set_var("XDG_DATA_HOME", v),
             None => env::remove_var("XDG_DATA_HOME"),
+        }
+    }
+
+    #[test]
+    fn runtime_dir_without_xdg_runtime_uses_private_data_runtime() {
+        let _lock = crate::env_lock();
+        let dir = tempfile::TempDir::new().unwrap();
+        let old_runtime = env::var_os("XDG_RUNTIME_DIR");
+        let old_data = env::var_os("XDG_DATA_HOME");
+        let old_tmp = env::var_os("TMPDIR");
+        env::set_var("XDG_DATA_HOME", dir.path().join("data"));
+        env::remove_var("XDG_RUNTIME_DIR");
+        env::remove_var("TMPDIR");
+
+        assert_eq!(runtime_dir(), dir.path().join("data/omapaste/runtime"));
+        #[cfg(unix)]
+        assert_eq!(
+            runtime_dir().metadata().unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        match old_runtime {
+            Some(v) => env::set_var("XDG_RUNTIME_DIR", v),
+            None => env::remove_var("XDG_RUNTIME_DIR"),
+        }
+        match old_data {
+            Some(v) => env::set_var("XDG_DATA_HOME", v),
+            None => env::remove_var("XDG_DATA_HOME"),
+        }
+        match old_tmp {
+            Some(v) => env::set_var("TMPDIR", v),
+            None => env::remove_var("TMPDIR"),
+        }
+    }
+
+    #[test]
+    fn cleanup_drag_temps_removes_only_drag_files() {
+        let _lock = crate::env_lock();
+        let dir = tempfile::TempDir::new().unwrap();
+        let old_runtime = env::var_os("XDG_RUNTIME_DIR");
+        env::set_var("XDG_RUNTIME_DIR", dir.path());
+
+        let drag = runtime_dir().join("drag-leftover.png");
+        crate::secure_fs::write_private_new_file(&drag, b"x").unwrap();
+        let keep = runtime_dir().join("note.txt");
+        crate::secure_fs::write_private_new_file(&keep, b"y").unwrap();
+
+        cleanup_drag_temps();
+
+        assert!(!drag.exists());
+        assert!(keep.exists());
+
+        match old_runtime {
+            Some(v) => env::set_var("XDG_RUNTIME_DIR", v),
+            None => env::remove_var("XDG_RUNTIME_DIR"),
         }
     }
 

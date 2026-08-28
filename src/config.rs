@@ -60,11 +60,15 @@ pub fn load_config(path: Option<&Path>) -> Config {
         .unwrap_or_else(crate::paths::config_path);
     if !target.exists() {
         if let Some(parent) = target.parent() {
-            let _ = fs::create_dir_all(parent);
+            let _ = crate::secure_fs::ensure_private_dir(parent);
         }
-        let _ = fs::write(&target, DEFAULT_CONFIG);
+        let _ = crate::secure_fs::write_private_file(&target, DEFAULT_CONFIG.as_bytes());
         return Config::default();
     }
+    if crate::secure_fs::reject_non_regular_file(&target).is_err() {
+        return Config::default();
+    }
+    let _ = crate::secure_fs::harden_private_file(&target);
     let Ok(text) = fs::read_to_string(&target) else {
         return Config::default();
     };
@@ -162,6 +166,24 @@ mod tests {
         assert_eq!(cfg.max_items, 1);
         assert_eq!(cfg.max_bytes, 1024);
         assert_eq!(cfg.paste_keys, "ctrl-v");
+    }
+
+    #[test]
+    fn existing_config_is_hardened_on_load() {
+        #[cfg(unix)]
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        crate::secure_fs::ensure_private_dir(dir.path()).unwrap();
+        fs::write(&path, "default_keep = \"7d\"\n").unwrap();
+        #[cfg(unix)]
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let cfg = load_config(Some(&path));
+        assert_eq!(cfg.default_keep, "7d");
+        #[cfg(unix)]
+        assert_eq!(path.metadata().unwrap().permissions().mode() & 0o777, 0o600);
     }
 
     #[test]
