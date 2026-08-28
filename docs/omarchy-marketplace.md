@@ -4,6 +4,8 @@ How omapaste is listed on [omarchyplugins.com](https://omarchyplugins.com/), and
 
 The marketplace is **discovery and metadata**. Users still install and update from this GitHub repo. A catalog update is optional for day-to-day use.
 
+**Agent note:** If the user says *re-verify on omarchyplugins* / *update the marketplace listing*, read [§ Agent: re-verify the catalog](#agent-re-verify-the-catalog) below. Do not use README.md for that workflow.
+
 ## Plugin identity
 
 | Field | Value |
