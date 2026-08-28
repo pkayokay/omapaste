@@ -4,7 +4,7 @@
 
 - Report-issue icon closes the bar after opening the GitHub issue tracker
 - README: marketplace-first install, v0.2.0 feature list, Hyprland toggle customization link
-- Docs: contributor vs user split, listing live on omarchyplugins.com, agent re-verify workflow for catalog updates
+- Docs: contributor vs user split, listing live on omarchyplugins.com, agent re-verify workflow and prompt note for catalog updates, releases decoupled from marketplace
 
 ## 0.2.0
 
