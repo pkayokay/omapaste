@@ -207,6 +207,20 @@ function imagePathsRemoved(oldHistory, newHistory) {
   return out
 }
 
+function touchEntryAt(history, index, nowSecs) {
+  var values = Array.isArray(history) ? history.slice() : []
+  var target = Number(index)
+  if (isNaN(target) || target < 0 || target >= values.length)
+    return values
+  var entry = normalizeEntry(values[target])
+  if (!entry)
+    return values
+  entry.ts = Number(nowSecs || (Date.now() / 1000))
+  values.splice(target, 1)
+  values.unshift(entry)
+  return values
+}
+
 function updateEntryAt(history, index, mutator) {
   var values = Array.isArray(history) ? history.slice() : []
   var target = Number(index)

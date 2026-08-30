@@ -27,7 +27,7 @@ function loadLibrary( file ) {
   vm.runInContext( src + "\nthis.__exports = {" +
     "KEEP_PRESETS,DEFAULT_KEEP,DEFAULT_MAX_ITEMS," +
     "keepByKey,nextKeep,keepUntilFrom,applyDefaultKeep,isExpired," +
-    "normalizeEntry,entryKey,parseHistory,addEntry,removeEntryAt,imagePathsRemoved," +
+    "normalizeEntry,entryKey,parseHistory,addEntry,removeEntryAt,imagePathsRemoved,touchEntryAt," +
     "cycleKeepAt,renameKindAt,parseEntryJson,previewText,keepLabel," +
     "charLabel,matchesFilter,visibleHistory,displayRows,ageLabel" +
     "};", sandbox )
@@ -123,6 +123,14 @@ const imgPath = "/tmp/omapaste-test.png"
 const imgEntry = H.normalizeEntry( { type: "image", path: imgPath, mime: "image/png", hash: "imgp", ts: now } )
 assert( H.imagePathsRemoved( [ imgEntry ], [] ).indexOf( imgPath ) >= 0, "imagePathsRemoved drop" )
 assert( H.imagePathsRemoved( [ imgEntry ], [ imgEntry ] ).length === 0, "imagePathsRemoved keep" )
+
+let touchHist = []
+touchHist = H.addEntry( touchHist, { type: "text", text: "a", hash: "ht1", ts: now }, 10, "1d" )
+touchHist = H.addEntry( touchHist, { type: "text", text: "b", hash: "ht2", ts: now }, 10, "1d" )
+touchHist = H.touchEntryAt( touchHist, 1, now + 5 )
+assert( touchHist.length === 2, "touch keeps count" )
+assert( touchHist[0].text === "a", "touch moves to front" )
+assert( touchHist[0].ts === now + 5, "touch updates ts" )
 
 // --- Image ---
 const img = H.normalizeEntry( { type: "image", path: "/tmp/x.png", mime: "image/png", hash: "img1", ts: now } )

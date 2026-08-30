@@ -25,6 +25,7 @@ Item {
   property string priorAddress: ""
   property var history: []
   property var pendingPasteArgv: null
+  property int pendingTouchIndex: -1
   property var config: Config.normalize(null)
   readonly property int pasteDelayMs: 160
 
@@ -123,6 +124,7 @@ Item {
     root.shortcutsOpen = false
     root.kindEditing = false
     root.pendingPasteArgv = null
+    root.pendingTouchIndex = -1
     pasteAfterHideTimer.stop()
     root.opened = true
     root.slide = 1.0
@@ -192,8 +194,18 @@ Item {
     root.beginHide(function () {
       if (root.shell && typeof root.shell.hide === "function")
         root.shell.hide(root.pluginId())
+      root.applyPendingTouch()
       root.runPendingPaste()
     })
+  }
+
+  function applyPendingTouch() {
+    if (root.pendingTouchIndex < 0)
+      return
+    var index = root.pendingTouchIndex
+    root.pendingTouchIndex = -1
+    root.history = History.touchEntryAt(root.history, index, Date.now() / 1000)
+    root.saveHistory()
   }
 
   function runPendingPaste() {
@@ -295,7 +307,7 @@ Item {
     return displayModel.get(root.selectedIndex)
   }
 
-  function copySelected(closeAfter) {
+  function copySelected(closeAfter, reorder) {
     var row = root.currentRow()
     if (!row)
       return
@@ -303,6 +315,8 @@ Item {
       Quickshell.execDetached([root.pasteScript, "copy-image", row.path, row.mime || "image/png", row.hash || ""])
     else
       Quickshell.execDetached([root.pasteScript, "copy-text", row.fullText, row.hash || ""])
+    if (reorder)
+      root.pendingTouchIndex = row.historyIndex
     if (closeAfter)
       root.dismiss()
   }
@@ -318,6 +332,7 @@ Item {
     if (!row)
       return
     var keys = root.config.paste_keys || "auto"
+    root.pendingTouchIndex = row.historyIndex
     if (row.entryType === "image") {
       root.pendingPasteArgv = [
         root.pasteScript, "paste-image", row.path, row.mime || "image/png",
@@ -1029,7 +1044,7 @@ Item {
           root.pasteSelected()
           event.accepted = true
         } else if (ctrl && (event.key === Qt.Key_C)) {
-          root.copySelected(true)
+          root.copySelected(true, true)
           event.accepted = true
         } else if (ctrl && (event.key === Qt.Key_K)) {
           root.cycleKeep()
