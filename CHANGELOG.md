@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Render clipboard card previews as plain text so history text cannot load remote rich content in the shell
+
 ## 0.3.0
 
 - Quattro-native rewrite: clipboard watch + bottom bar in QML (no Rust daemon)
