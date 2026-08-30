@@ -32,6 +32,7 @@ Item {
   readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (home + "/.config")
   readonly property string historyPath: stateHome + "/omapaste/qml-history.json"
   readonly property string configPath: configHome + "/omapaste/qml-config.json"
+  readonly property string imageDir: stateHome + "/omapaste/qml-images"
   property var history: []
 
   // Text samples aligned with src/store.rs SEED_CLIPS (text only in GTK seed).
@@ -116,9 +117,15 @@ Item {
   }
 
   function unlinkImagePaths(paths) {
-    if (!paths || paths.length === 0)
+    var safe = History.managedImagePathsOnly(paths, root.imageDir)
+    if (!safe || safe.length === 0)
       return
-    Quickshell.execDetached(["rm", "-f"].concat(paths))
+    Quickshell.execDetached(["rm", "-f"].concat(safe))
+  }
+
+  function persistHistoryFile(text) {
+    historyFile.setText(text)
+    Quickshell.execDetached(["chmod", "600", root.historyPath])
   }
 
   function saveHistory() {
@@ -128,7 +135,7 @@ Item {
     var capped = pruned.slice(0, root.config.max_items)
     root.unlinkImagePaths(History.imagePathsRemoved(before, capped))
     root.history = capped
-    historyFile.setText(JSON.stringify(capped, null, 2) + "\n")
+    root.persistHistoryFile(JSON.stringify(capped, null, 2) + "\n")
   }
 
   function addClipboardEntry(entry) {
@@ -152,8 +159,7 @@ Item {
   }
 
   function stopWatchers() {
-    textWatchProc.running = false
-    imageWatchProc.running = false
+    clipboardWatchProc.running = false
   }
 
   function startWatchers() {
@@ -162,10 +168,9 @@ Item {
       startWatchersTimer.start()
       return
     }
-    if (!textWatchProc.running)
-      textWatchProc.running = true
-    if (!imageWatchProc.running)
-      imageWatchProc.running = true
+    // One watch covers text + any image/* the compositor advertises (not PNG-only).
+    if (!clipboardWatchProc.running)
+      clipboardWatchProc.running = true
   }
 
   function installLauncher() {
@@ -259,22 +264,8 @@ Item {
   }
 
   Process {
-    id: textWatchProc
-    command: ["setpriv", "--pdeathsig", "TERM", "wl-paste", "--type", "text", "--watch", root.captureScript, "text"]
-    onExited: {
-      if (root.pluginDir !== "")
-        watchRestartTimer.restart()
-    }
-    stdout: SplitParser {
-      onRead: function (data) {
-        root.addClipboardJson(data)
-      }
-    }
-  }
-
-  Process {
-    id: imageWatchProc
-    command: ["setpriv", "--pdeathsig", "TERM", "wl-paste", "--type", "image/png", "--watch", root.captureScript, "image/png"]
+    id: clipboardWatchProc
+    command: ["setpriv", "--pdeathsig", "TERM", "wl-paste", "--watch", root.captureScript]
     onExited: {
       if (root.pluginDir !== "")
         watchRestartTimer.restart()

@@ -32,7 +32,8 @@ function loadLibrary( file ) {
     "charLabel,matchesFilter,visibleHistory,displayRows,ageLabel," +
     "shouldReopenAfterDrag,cardDragPrepareAllowed,dragMimeData,isOmapasteImageRef,pruneOmapasteImageRefClips," +
     "cardPointerPressState,cardPointerMoveDecision,shouldSelectOnCardClick," +
-    "shouldRestoreBarKeyFocusAfterCardSelect,shouldBlockCardDragAfterKindCommit" +
+    "shouldRestoreBarKeyFocusAfterCardSelect,shouldBlockCardDragAfterKindCommit," +
+    "isManagedImagePath,managedImagePathsOnly" +
     "};", sandbox )
   return sandbox.__exports
 }
@@ -192,6 +193,10 @@ assert( H.normalizeEntry( { type: "text", text: "291fe4d0dc9dbd521d385f3bc90ec50
 var encUri = "file://%2Fhome%2Fpaulkim%2F.local%2Fstate%2Fomapaste%2Fqml-images%2Fabc.png"
 assert( H.isOmapasteImageRef( encUri ) === true, "encoded file uri ref" )
 assert( H.pruneOmapasteImageRefClips( [ { type: "text", text: encUri, hash: "x" }, { type: "text", text: "ok", hash: "y" } ] ).length === 1, "prune encoded uri clip" )
+assert( H.isManagedImagePath( "/home/u/.local/state/omapaste/qml-images/abc.png", "/home/u/.local/state/omapaste/qml-images" ) === true, "managed image path ok" )
+assert( H.isManagedImagePath( "/home/u/.ssh/id_rsa", "/home/u/.local/state/omapaste/qml-images" ) === false, "managed image path rejects escape" )
+assert( H.isManagedImagePath( "/home/u/.local/state/omapaste/qml-images/../secrets", "/home/u/.local/state/omapaste/qml-images" ) === false, "managed image path rejects dotdot" )
+assert( H.managedImagePathsOnly( [ "/home/u/.local/state/omapaste/qml-images/a.png", "/tmp/x" ], "/home/u/.local/state/omapaste/qml-images" ).length === 1, "managed paths filter" )
 
 // --- parseHistory ---
 assert( H.parseHistory( "not-json" ).length === 0, "parseHistory bad json" )

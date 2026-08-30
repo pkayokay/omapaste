@@ -92,8 +92,26 @@ if [[ -f "$ipath" ]]; then
   [[ "$(cat "$STATE/qml-ignore-hash")" == "$ihash" ]] && ok "paste copy-image ignore-hash" || bad "copy-image ignore"
 fi
 
-# --- secret MIME: simulate list-types containing password hint ---
-# capture.sh calls wl-paste --list-types; stub PATH
+# --- paste rejects image paths outside qml-images ---
+outside="$TMP/outside.png"
+cp "$png" "$outside"
+if "$ROOT/paste.sh" copy-image "$outside" "image/png" "evilhash" 2>/dev/null; then
+  bad "paste allowed path outside qml-images"
+else
+  ok "paste rejects path outside qml-images"
+fi
+
+# --- capture sanitizes evil mime extensions ---
+evil_out=$(cat "$png" | "$ROOT/capture.sh" 'image/../../../tmp/evil' || true)
+if [[ -n "$evil_out" ]]; then
+  epath=$(jq -r '.path // empty' <<<"$evil_out")
+  [[ "$epath" == "$STATE/qml-images/"* && "$epath" != *".."* ]] && ok "evil mime stays in qml-images" || bad "evil mime path=$epath"
+else
+  # PNG validation may reject if mime is not image/png — also fine
+  ok "evil mime rejected or contained"
+fi
+
+# --- secret MIME stub ---
 STUB="$TMP/bin"
 mkdir -p "$STUB"
 cat >"$STUB/wl-paste" <<'EOF'
@@ -102,18 +120,30 @@ if [[ "${1:-}" == "--list-types" ]]; then
   printf '%s\n' 'text/plain' 'x-kde-passwordManagerHint'
   exit 0
 fi
+# text paste for capture.sh text mode
+if [[ "${1:-}" == "--type" && "${2:-}" == "text" ]]; then
+  cat
+  exit 0
+fi
 exit 1
 EOF
 chmod +x "$STUB/wl-paste"
-out=$(PATH="$STUB:$PATH" "$ROOT/capture.sh" 2>/dev/null || true)
+
+# --- ignore_secrets false: sensitive clipboard is still captured ---
+mkdir -p "$TMP/config/omapaste"
+printf '%s\n' '{"ignore_secrets": false}' >"$TMP/config/omapaste/qml-config.json"
+rm -f "$STATE/qml-ignore-until" "$STATE/qml-ignore-hash"
+out=$(CLIPBOARD_STATE=sensitive printf 'visible-secret' | PATH="$STUB:$PATH" XDG_CONFIG_HOME="$TMP/config" XDG_STATE_HOME="$XDG_STATE_HOME" "$ROOT/capture.sh" text 2>/dev/null || true)
+[[ -n "$out" ]] && ok "ignore_secrets false captures text" || bad "ignore_secrets false still blocked: $out"
+
+# default ignore_secrets (no config / true)
+rm -f "$STATE/qml-ignore-until" "$STATE/qml-ignore-hash"
+out=$(PATH="$STUB:$PATH" XDG_CONFIG_HOME="$TMP/empty-config" XDG_STATE_HOME="$XDG_STATE_HOME" "$ROOT/capture.sh" 2>/dev/null || true)
 [[ -z "$out" ]] && ok "secret MIME skipped" || bad "secret MIME emitted: $out"
 
 # --- CLIPBOARD_STATE=sensitive ---
-out=$(CLIPBOARD_STATE=sensitive printf 'secret' | PATH="$STUB:$PATH" "$ROOT/capture.sh" text 2>/dev/null || true)
-# text mode still reads stdin and doesn't re-check list-types the same way —
-# sensitive is checked at top via list-types OR CLIPBOARD_STATE before case.
-# For `text` subcommand, list-types still runs at top — stub has password hint so exit 0.
-out=$(CLIPBOARD_STATE=sensitive "$ROOT/capture.sh" 2>/dev/null || true)
+rm -f "$STATE/qml-ignore-until" "$STATE/qml-ignore-hash"
+out=$(CLIPBOARD_STATE=sensitive PATH="$STUB:$PATH" XDG_CONFIG_HOME="$TMP/empty-config" XDG_STATE_HOME="$XDG_STATE_HOME" "$ROOT/capture.sh" 2>/dev/null || true)
 [[ -z "$out" ]] && ok "CLIPBOARD_STATE=sensitive skipped" || bad "sensitive emitted"
 
 echo

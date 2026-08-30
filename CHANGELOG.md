@@ -6,8 +6,12 @@
 - One-command install: `omarchy plugin add … --enable` (no `./install.sh`)
 - JSON history under `~/.local/state/omapaste/`; config `~/.config/omapaste/qml-config.json`
 - GTK feature parity: search, keep cycle, rename, Enter paste, shortcuts, image seeds, secret skip
+- Search: bordered field, clear (✕) in the magnifier slot, arrow selection while filtering
 - Drag cards into other apps (Qt Wayland drag; panel unmaps on drag)
 - Ignore window + filters so image drag file URLs do not pollute history as text clips
+- Watch any advertised clipboard image type (PNG/JPEG/WebP/GIF/…), not PNG-only
+- Harden image paths (only `qml-images/`), `chmod 600` history, sanitize mime extensions
+- Honor `ignore_secrets` from config; clamp `max_bytes`
 - Auto-install launcher desktop entry on first service load
 - Rust/GTK tree under `src/` retained as legacy reference only
 

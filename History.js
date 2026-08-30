@@ -200,6 +200,32 @@ function normalizeEntry(value) {
   return null
 }
 
+// Only allow deletes/copies under the plugin image dir (no path traversal).
+function isManagedImagePath(path, imageDir) {
+  var p = String(path || "")
+  var dir = String(imageDir || "")
+  if (!p || !dir)
+    return false
+  if (dir.charAt(dir.length - 1) === "/")
+    dir = dir.substring(0, dir.length - 1)
+  if (p.indexOf(dir + "/") !== 0)
+    return false
+  var rest = p.substring(dir.length + 1)
+  if (!rest.length || rest.indexOf("..") >= 0)
+    return false
+  return true
+}
+
+function managedImagePathsOnly(paths, imageDir) {
+  var list = Array.isArray(paths) ? paths : []
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    if (isManagedImagePath(list[i], imageDir))
+      out.push(String(list[i]))
+  }
+  return out
+}
+
 function entryKey(entry) {
   if (!entry)
     return ""

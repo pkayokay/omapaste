@@ -1,5 +1,5 @@
 #!/bin/bash
-# Capture clipboard as one JSON line for the QML omapaste experiment.
+# Capture clipboard as one JSON line for the QML omapaste plugin.
 # Mirrors Omarchy's watcher shape, but writes under omapaste state paths.
 
 set -o pipefail
@@ -10,8 +10,18 @@ IGNORE_FILE="$STATE_DIR/qml-ignore-hash"
 IGNORE_UNTIL_FILE="$STATE_DIR/qml-ignore-until"
 CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omapaste/qml-config.json"
 MAX_BYTES=8000000
+IGNORE_SECRETS=1
 if [[ -f "$CONFIG_FILE" ]]; then
   MAX_BYTES=$(jq -r '.max_bytes // 8000000' "$CONFIG_FILE" 2>/dev/null || echo 8000000)
+  if ! [[ "$MAX_BYTES" =~ ^[0-9]+$ ]] || (( MAX_BYTES < 1 )); then
+    MAX_BYTES=8000000
+  elif (( MAX_BYTES > 50000000 )); then
+    MAX_BYTES=50000000
+  fi
+  secrets=$(jq -r 'if has("ignore_secrets") then .ignore_secrets else true end' "$CONFIG_FILE" 2>/dev/null || echo true)
+  if [[ "$secrets" == "false" || "$secrets" == "0" ]]; then
+    IGNORE_SECRETS=0
+  fi
 fi
 export OMAPASTE_MAX_BYTES="$MAX_BYTES"
 export OMAPASTE_IMAGE_DIR="$IMAGE_DIR"
@@ -20,8 +30,10 @@ chmod 700 "$STATE_DIR" "$IMAGE_DIR" 2>/dev/null || true
 
 types=$(wl-paste --list-types 2>/dev/null || true)
 
-if [[ ${CLIPBOARD_STATE:-} == "sensitive" ]] || grep -qx 'x-kde-passwordManagerHint' <<<"$types"; then
-  exit 0
+if (( IGNORE_SECRETS )); then
+  if [[ ${CLIPBOARD_STATE:-} == "sensitive" ]] || grep -qx 'x-kde-passwordManagerHint' <<<"$types"; then
+    exit 0
+  fi
 fi
 
 ignore_all_active() {
@@ -57,12 +69,33 @@ maybe_ignore() {
   fi
 }
 
+image_ext_for_mime() {
+  local mime="$1"
+  local ext
+  ext=${mime#image/}
+  ext=${ext%%;*}
+  ext=$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')
+  case "$ext" in
+    jpeg) ext=jpg ;;
+    "") ext=bin ;;
+  esac
+  # Only short alphanumeric extensions — blocks path traversal via mime.
+  if (( ${#ext} > 8 )); then
+    ext=bin
+  fi
+  printf '%s' "$ext"
+}
+
 emit_image() {
   local mime="$1"
   local ext tmp hash file
 
-  ext=${mime#image/}
-  [[ $ext == jpeg ]] && ext=jpg
+  case "$mime" in
+    image/*) ;;
+    *) return 0 ;;
+  esac
+
+  ext=$(image_ext_for_mime "$mime")
 
   tmp=$(mktemp --tmpdir="$IMAGE_DIR" clipboard.XXXXXX) || return 0
   # Cap image capture so a hostile source cannot fill disk in one paste.
@@ -140,7 +173,7 @@ if not text.strip():
 def decoded_path(line):
     s = line.strip()
     if s.startswith("file://"):
-        return urllib.parse.unquote(s[7:], errors="strict")
+        return urllib.parse.unquote(s[7:], errors="replace")
     return s
 
 def line_is_omapaste_image_ref(s):
@@ -202,6 +235,7 @@ image/*)
   ;;
 esac
 
+# Generic watch path (no argv): pick best advertised type.
 for mime in image/png image/jpeg image/webp image/gif image/bmp image/tiff; do
   if grep -qx "$mime" <<<"$types"; then
     timeout 2s wl-paste --type "$mime" 2>/dev/null | emit_image "$mime"

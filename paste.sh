@@ -6,7 +6,8 @@ set -euo pipefail
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omapaste"
 IGNORE_FILE="$STATE_DIR/qml-ignore-hash"
 IGNORE_UNTIL_FILE="$STATE_DIR/qml-ignore-until"
-mkdir -p "$STATE_DIR"
+IMAGE_DIR="$STATE_DIR/qml-images"
+mkdir -p "$STATE_DIR" "$IMAGE_DIR"
 
 mode="${1:-}"
 shift || true
@@ -28,6 +29,18 @@ remember_ignore() {
   fi
   printf '%s' "$new_until" >"$IGNORE_UNTIL_FILE"
   chmod 600 "$IGNORE_UNTIL_FILE" 2>/dev/null || true
+}
+
+# Reject path traversal / copies outside the plugin image store.
+managed_image_path() {
+  local path="$1"
+  local real base
+  [[ -n "$path" && -f "$path" ]] || return 1
+  real=$(realpath -e "$path" 2>/dev/null || true)
+  base=$(realpath -e "$IMAGE_DIR" 2>/dev/null || true)
+  [[ -n "$real" && -n "$base" ]] || return 1
+  [[ "$real" == "$base"/* ]] || return 1
+  return 0
 }
 
 focus_address() {
@@ -102,7 +115,7 @@ copy-image)
   path="${1:-}"
   mime="${2:-image/png}"
   hash="${3:-}"
-  [[ -f "$path" ]] || exit 1
+  managed_image_path "$path" || exit 1
   remember_ignore "$hash"
   wl-copy --type "$mime" <"$path"
   ;;
@@ -112,7 +125,7 @@ paste-image)
   hash="${3:-}"
   address="${4:-}"
   paste_keys="${5:-auto}"
-  [[ -f "$path" ]] || exit 1
+  managed_image_path "$path" || exit 1
   remember_ignore "$hash"
   wl-copy --type "$mime" <"$path"
   focus_address "$address"
