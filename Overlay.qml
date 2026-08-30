@@ -369,14 +369,6 @@ Item {
     root.rebuildDisplay()
   }
 
-  function beginKindEdit() {
-    var row = root.currentRow()
-    if (!row)
-      return
-    root.kindEditing = true
-    root.kindEditText = row.kind || ""
-  }
-
   function commitKindEdit() {
     if (!root.kindEditing)
       return
@@ -384,11 +376,14 @@ Item {
     var text = root.kindEditText
     root.kindEditing = false
     root.kindEditText = ""
-    if (!row)
+    if (!row) {
+      root.restoreBarKeyFocus()
       return
+    }
     root.history = History.renameKindAt(root.history, row.historyIndex, text)
     root.saveHistory()
     root.rebuildDisplay()
+    root.restoreBarKeyFocus()
   }
 
   function commitKindEditIfNeeded() {
@@ -399,6 +394,21 @@ Item {
   function cancelKindEdit() {
     root.kindEditing = false
     root.kindEditText = ""
+    root.restoreBarKeyFocus()
+  }
+
+  function restoreBarKeyFocus() {
+    Qt.callLater(function () {
+      keyCatcher.forceActiveFocus()
+    })
+  }
+
+  function beginKindEdit() {
+    var row = root.currentRow()
+    if (!row)
+      return
+    root.kindEditing = true
+    root.kindEditText = row.kind || ""
   }
 
   function openIssues() {
@@ -480,7 +490,12 @@ Item {
     Keys.onPressed: function (event) {
       if (event.key !== Qt.Key_Escape)
         return
-      if (root.kindEditing || root.searchOpen)
+      if (root.kindEditing) {
+        root.cancelKindEdit()
+        event.accepted = true
+        return
+      }
+      if (root.searchOpen)
         return
       if (root.shortcutsOpen) {
         root.shortcutsOpen = false
@@ -834,6 +849,10 @@ Item {
                       font.weight: Font.DemiBold
                       selectByMouse: true
                       onTextChanged: root.kindEditText = text
+                      onVisibleChanged: {
+                        if (visible)
+                          Qt.callLater(function () { forceActiveFocus() })
+                      }
                       Keys.onPressed: function (event) {
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                           root.commitKindEdit()
@@ -843,7 +862,6 @@ Item {
                           event.accepted = true
                         }
                       }
-                      Component.onCompleted: if (card.editingKind) forceActiveFocus()
                     }
 
                     Text {
@@ -1015,8 +1033,13 @@ Item {
         focus: true
         Keys.priority: Keys.BeforeItem
       Keys.onPressed: function (event) {
-        if (root.kindEditing)
+        if (root.kindEditing) {
+          if (event.key === Qt.Key_Escape) {
+            root.cancelKindEdit()
+            event.accepted = true
+          }
           return
+        }
         if (root.searchOpen)
           return
 
