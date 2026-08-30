@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.pkayokay.omapaste",
   "name": "Omapaste",
-  "version": "0.3.0-qml-exp",
+  "version": "0.3.0",
   "author": "Paul Kim",
   "license": "MIT",
-  "description": "EXPERIMENT: Quattro-native Paste-style clipboard bar (QML). No Rust daemon required on this branch.",
+  "description": "Paste-style clipboard history bar for Omarchy (Quattro plugin). No separate daemon.",
   "kinds": ["service", "overlay"],
   "keepLoaded": true,
   "entryPoints": {

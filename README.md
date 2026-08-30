@@ -4,9 +4,7 @@ Clipboard history for [Omarchy](https://omarchy.org). Inspired by [Paste](https:
 
 ![Omapaste clipboard history bar](share/screenshot.png)
 
-Omapaste is an **Omarchy Quattro plugin**: a bottom card timeline for clipboard history. It watches what you copy, and summons a bar so you can grab an older clip without losing the current one.
-
-> **This branch (`experiment/qml-feature-parity`)** is the Quattro-native rewrite. No Rust binary or `./install.sh` is required. The GTK/Rust tree under `src/` is legacy reference only — see [docs/legacy-gtk.md](docs/legacy-gtk.md).
+Omapaste is an **Omarchy Quattro plugin**: a bottom card timeline for clipboard history. It watches what you copy, and summons a bar so you can grab an older clip without losing the current one. No separate daemon or `./install.sh` — install is one Omarchy plugin command.
 
 ## What it does
 
@@ -14,10 +12,10 @@ Omapaste is an **Omarchy Quattro plugin**: a bottom card timeline for clipboard 
 - Stores history locally as JSON under `~/.local/state/omapaste/`
 - Bottom layer-shell card strip (most recent first): kind, age, keep, preview, character count
 - **Selecting** a card copies it; **Enter** (or double-click) pastes into the window that was focused before the bar opened
+- **Drag** a card into another app (text or images; terminals and text fields get a path/URI)
 - Double-click a kind label to rename; per-clip keep time (1h / 1d / 7d / forever) and search
 - Follows the current Omarchy menu theme tokens
 - Skips password-manager / secret MIME types
-- **Not supported:** drag a card into another app (copy/paste instead)
 
 ## Install
 
@@ -31,7 +29,7 @@ System packages (usually already on Omarchy):
 sudo pacman -S --needed wl-clipboard wtype python jq
 ```
 
-Optional Hyprland toggle (**Super+Shift+V** — does not use `install.sh`):
+Optional Hyprland toggle (**Super+Shift+V** — edit yourself; the plugin never rewrites Hyprland config):
 
 ```lua
 -- ~/.config/hypr/bindings.lua
@@ -55,6 +53,7 @@ omarchy-shell shell summon io.github.pkayokay.omapaste '{}'
 | Super+Shift+V (if bound) | Toggle the bar |
 | ← → | Select a clip (also copies it) |
 | Click a card | Select and copy |
+| Drag a card | Drop into another app |
 | Ctrl+C | Copy the highlighted clip and close |
 | Enter or double-click | Paste into the previous window and close |
 | Ctrl+1–9 | Paste that card |
@@ -68,7 +67,7 @@ omarchy-shell shell summon io.github.pkayokay.omapaste '{}'
 
 ## Why not the built-in Omarchy clipboard?
 
-Omarchy’s Super+Ctrl+V picker is a vertical list that copies onto the clipboard. Omapaste is the Paste.app-shaped alternative: a bottom card timeline, per-clip retention, and paste-on-Enter into the app you were already in.
+Omarchy’s Super+Ctrl+V picker is a vertical list that copies onto the clipboard. Omapaste is the Paste.app-shaped alternative: a bottom card timeline, per-clip retention, drag into apps, and paste-on-Enter into the app you were already in.
 
 ## Docs
 
@@ -76,8 +75,9 @@ Omarchy’s Super+Ctrl+V picker is a vertical list that copies onto the clipboar
 | --- | --- |
 | [docs/omarchy-plugin.md](docs/omarchy-plugin.md) | Plugin install, update, remove, Hyprland bind |
 | [docs/configuration.md](docs/configuration.md) | `qml-config.json`, data paths |
-| [docs/TEMP-qml-port-plan.md](docs/TEMP-qml-port-plan.md) | Experiment plan / agent handoff (temporary) |
 | [docs/legacy-gtk.md](docs/legacy-gtk.md) | Old Rust/GTK daemon notes |
+| [docs/omarchy-marketplace.md](docs/omarchy-marketplace.md) | Catalog / re-verify notes |
+| [docs/release.md](docs/release.md) | Release checklist |
 | [AGENTS.md](AGENTS.md) | Development notes |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 

@@ -30,7 +30,7 @@ Do **not** open a second submission issue for the same plugin. Update the existi
 
 ## What users actually do (no marketplace step)
 
-See [omarchy-plugin.md](omarchy-plugin.md). On the **QML experiment branch**:
+See [omarchy-plugin.md](omarchy-plugin.md). Users install with:
 
 ```bash
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
@@ -38,7 +38,7 @@ omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
 
 Optional hand-edited Hyprland bind for Super+Shift+V (see plugin doc). No `./install.sh`.
 
-On **main** (GTK era, until merge), users still need `install.sh` after `plugin add` — catalog may show **Manual setup**.
+As of **0.3.0** the plugin is Quattro-native (QML); catalog should use **standard installation** after re-verify.
 
 ## When to open a marketplace issue again
 
@@ -106,7 +106,7 @@ TARGET_SHA
 - [x] I understand that only the exact target commit can become a verified marketplace snapshot and that verification is not a security audit.
 ```
 
-Do **not** add `### Standard installation acknowledgment` on main’s GTK listing. After the **QML port is merged** and one-command install is honest, use verification action **Verify the listed snapshot and enable standard installation** plus the standard-installation acknowledgment (see [TEMP-qml-port-plan.md](TEMP-qml-port-plan.md) Phase 3).
+Do **not** leave the listing on **Manual setup**. After **0.3.0** (Quattro-native, one-command install), use verification action **Verify the listed snapshot and enable standard installation** plus the standard-installation acknowledgment.
 
 ```bash
 gh issue create \
@@ -119,9 +119,10 @@ Pre-flight: `omarchy plugin validate "$(pwd)"`, `manifest.json` version matches 
 
 ## Maintainer notes worth repeating on updates
 
-- `omarchy plugin add` installs the Quattro wrapper only; the `omapaste` binary must be on `PATH` (`./install.sh`).
-- `./install.sh --hypr` is opt-in and is the only step that edits Hyprland config; plugin enable/disable does not.
-- External deps: gtk4, gtk4-layer-shell, wl-clipboard, wtype.
+- `omarchy plugin add … --enable` is the full install (QML service + overlay). No `omapaste` binary on `PATH`.
+- Optional Super+Shift+V is a hand-edited Hyprland bind; plugin enable/disable does not edit Hyprland config.
+- External deps: wl-clipboard, wtype, python, jq (and Omarchy Quattro / `omarchy-shell`).
+- Legacy GTK under `src/` is reference only; do not tell catalog users to run `./install.sh`.
 
 ## Checklist before any marketplace action
 

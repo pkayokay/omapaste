@@ -2,7 +2,7 @@
 
 Plugin ID: `io.github.pkayokay.omapaste`.
 
-Omapaste runs **entirely inside Omarchy shell** (service + overlay). Clipboard watch and UI live in the plugin checkout — there is no separate `omapaste` binary on this branch.
+Omapaste runs **entirely inside Omarchy shell** (service + overlay). Clipboard watch and UI live in the plugin checkout — there is no separate `omapaste` binary.
 
 ## Requirements
 
@@ -100,4 +100,4 @@ Use **toggle** for Super+Shift+V so the bind opens and closes the bar.
 
 Catalog page: [omarchyplugins.com — Omapaste](https://omarchyplugins.com/plugin.html?id=io.github.pkayokay.omapaste).
 
-On **main** today the listing may still say manual setup (GTK era). This QML branch is meant to make **standard** `omarchy plugin add … --enable` honest after merge + re-verify. Maintainer notes: [omarchy-marketplace.md](omarchy-marketplace.md), experiment plan: [TEMP-qml-port-plan.md](TEMP-qml-port-plan.md).
+After merging **0.3.0** to `main`, re-verify the catalog so the listing can use **standard** `omarchy plugin add … --enable` (no manual `install.sh`). Maintainer notes: [omarchy-marketplace.md](omarchy-marketplace.md).

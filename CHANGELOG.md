@@ -1,13 +1,15 @@
 # Changelog
 
-## 0.3.0-qml-exp (experiment branch — unreleased)
+## 0.3.0
 
-- Quattro-native rewrite: clipboard watch + bottom bar in QML (no Rust daemon required)
-- One-command install: `omarchy plugin add … --enable`
-- JSON history, keep presets, search, paste-into-last-app, shortcuts panel
-- Config: `~/.config/omapaste/qml-config.json`
-- Drag-into-apps not supported on this path (copy/paste instead)
-- Rust/GTK tree retained as legacy reference
+- Quattro-native rewrite: clipboard watch + bottom bar in QML (no Rust daemon)
+- One-command install: `omarchy plugin add … --enable` (no `./install.sh`)
+- JSON history under `~/.local/state/omapaste/`; config `~/.config/omapaste/qml-config.json`
+- GTK feature parity: search, keep cycle, rename, Enter paste, shortcuts, image seeds, secret skip
+- Drag cards into other apps (Qt Wayland drag; panel unmaps on drag)
+- Ignore window + filters so image drag file URLs do not pollute history as text clips
+- Auto-install launcher desktop entry on first service load
+- Rust/GTK tree under `src/` retained as legacy reference only
 
 ## 0.2.1
 
