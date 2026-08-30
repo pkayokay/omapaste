@@ -27,7 +27,7 @@ function loadLibrary( file ) {
   vm.runInContext( src + "\nthis.__exports = {" +
     "KEEP_PRESETS,DEFAULT_KEEP,DEFAULT_MAX_ITEMS," +
     "keepByKey,nextKeep,keepUntilFrom,applyDefaultKeep,isExpired," +
-    "normalizeEntry,entryKey,parseHistory,addEntry,removeEntryAt," +
+    "normalizeEntry,entryKey,parseHistory,addEntry,removeEntryAt,imagePathsRemoved," +
     "cycleKeepAt,renameKindAt,parseEntryJson,previewText,keepLabel," +
     "charLabel,matchesFilter,visibleHistory,displayRows,ageLabel" +
     "};", sandbox )
@@ -118,6 +118,11 @@ assert( H.displayRows( withBeta, "beta", 40, now ).length === 1, "displayRows fi
 const n = withBeta.length
 const afterRm = H.removeEntryAt( withBeta, 0 )
 assert( afterRm.length === n - 1, "removeEntryAt" )
+
+const imgPath = "/tmp/omapaste-test.png"
+const imgEntry = H.normalizeEntry( { type: "image", path: imgPath, mime: "image/png", hash: "imgp", ts: now } )
+assert( H.imagePathsRemoved( [ imgEntry ], [] ).indexOf( imgPath ) >= 0, "imagePathsRemoved drop" )
+assert( H.imagePathsRemoved( [ imgEntry ], [ imgEntry ] ).length === 0, "imagePathsRemoved keep" )
 
 // --- Image ---
 const img = H.normalizeEntry( { type: "image", path: "/tmp/x.png", mime: "image/png", hash: "img1", ts: now } )

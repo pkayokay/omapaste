@@ -115,10 +115,20 @@ Item {
     seedImageProc.running = true
   }
 
+  function unlinkImagePaths(paths) {
+    if (!paths || paths.length === 0)
+      return
+    Quickshell.execDetached(["rm", "-f"].concat(paths))
+  }
+
   function saveHistory() {
-    var pruned = History.visibleHistory(root.history, Date.now() / 1000)
-    root.history = pruned
-    historyFile.setText(JSON.stringify(pruned.slice(0, root.config.max_items), null, 2) + "\n")
+    var now = Date.now() / 1000
+    var before = root.history
+    var pruned = History.visibleHistory(root.history, now)
+    var capped = pruned.slice(0, root.config.max_items)
+    root.unlinkImagePaths(History.imagePathsRemoved(before, capped))
+    root.history = capped
+    historyFile.setText(JSON.stringify(capped, null, 2) + "\n")
   }
 
   function addClipboardEntry(entry) {

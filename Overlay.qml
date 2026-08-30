@@ -24,7 +24,9 @@ Item {
   property int selectedIndex: 0
   property string priorAddress: ""
   property var history: []
+  property var pendingPasteArgv: null
   property var config: Config.normalize(null)
+  readonly property int pasteDelayMs: 160
 
   // GTK parity: src/ui.rs BAR_HEIGHT, CARD_*, SLIDE_PX, ANIM_DURATION.
   readonly property int barHeight: 356
@@ -120,6 +122,8 @@ Item {
     root.selectedIndex = 0
     root.shortcutsOpen = false
     root.kindEditing = false
+    root.pendingPasteArgv = null
+    pasteAfterHideTimer.stop()
     root.opened = true
     root.slide = 1.0
     root.rebuildDisplay()
@@ -188,7 +192,23 @@ Item {
     root.beginHide(function () {
       if (root.shell && typeof root.shell.hide === "function")
         root.shell.hide(root.pluginId())
+      root.runPendingPaste()
     })
+  }
+
+  function runPendingPaste() {
+    if (!root.pendingPasteArgv)
+      return
+    var argv = root.pendingPasteArgv
+    root.pendingPasteArgv = null
+    pasteAfterHideTimer.argv = argv
+    pasteAfterHideTimer.restart()
+  }
+
+  function unlinkImagePaths(paths) {
+    if (!paths || paths.length === 0)
+      return
+    Quickshell.execDetached(["rm", "-f"].concat(paths))
   }
 
   function toggle() {
@@ -205,9 +225,13 @@ Item {
   }
 
   function saveHistory() {
-    var pruned = History.visibleHistory(root.history, Date.now() / 1000)
-    root.history = pruned
-    historyFile.setText(JSON.stringify(pruned.slice(0, root.config.max_items), null, 2) + "\n")
+    var now = Date.now() / 1000
+    var before = root.history
+    var pruned = History.visibleHistory(root.history, now)
+    var capped = pruned.slice(0, root.config.max_items)
+    root.unlinkImagePaths(History.imagePathsRemoved(before, capped))
+    root.history = capped
+    historyFile.setText(JSON.stringify(capped, null, 2) + "\n")
   }
 
   function rebuildDisplay() {
@@ -295,15 +319,15 @@ Item {
       return
     var keys = root.config.paste_keys || "auto"
     if (row.entryType === "image") {
-      Quickshell.execDetached([
+      root.pendingPasteArgv = [
         root.pasteScript, "paste-image", row.path, row.mime || "image/png",
         row.hash || "", root.priorAddress, keys
-      ])
+      ]
     } else {
-      Quickshell.execDetached([
+      root.pendingPasteArgv = [
         root.pasteScript, "paste-text", row.fullText, row.hash || "",
         root.priorAddress, keys
-      ])
+      ]
     }
     root.dismiss()
   }
@@ -312,7 +336,9 @@ Item {
     var row = root.currentRow()
     if (!row)
       return
+    var before = root.history
     root.history = History.removeEntryAt(root.history, row.historyIndex)
+    root.unlinkImagePaths(History.imagePathsRemoved(before, root.history))
     root.saveHistory()
     if (root.selectedIndex >= displayModel.count - 1)
       root.selectedIndex = Math.max(0, displayModel.count - 2)
@@ -408,6 +434,18 @@ Item {
     }
   }
 
+  Timer {
+    id: pasteAfterHideTimer
+    interval: root.pasteDelayMs
+    repeat: false
+    property var argv: []
+    onTriggered: {
+      if (argv.length)
+        Quickshell.execDetached(argv)
+      argv = []
+    }
+  }
+
   PanelWindow {
     id: panel
     screen: root.activeScreen
@@ -488,153 +526,156 @@ Item {
         spacing: 8
 
         Row {
+          id: headerRow
           width: parent.width
           height: 28
           spacing: 10
 
-          // Brand: History + clip count (GTK op-title / op-count).
-          Row {
-            visible: !root.searchOpen
-            spacing: 8
+          Item {
+            width: Math.max(0, headerRow.width - trailingIcons.width - headerRow.spacing)
             height: 28
 
-            Text {
-              text: "History"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.subtitle
-              font.weight: Font.Bold
-              anchors.verticalCenter: parent.verticalCenter
+            Row {
+              visible: !root.searchOpen
+              width: parent.width
+              height: 28
+              spacing: 8
+
+              Text {
+                text: "History"
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.subtitle
+                font.weight: Font.Bold
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Text {
+                text: root.clipCountLabel()
+                color: root.metaColor
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                anchors.verticalCenter: parent.verticalCenter
+              }
             }
 
-            Text {
-              text: root.clipCountLabel()
-              color: root.metaColor
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              anchors.verticalCenter: parent.verticalCenter
+            Row {
+              visible: root.searchOpen
+              width: parent.width
+              height: 28
+              spacing: 6
+
+              Item {
+                width: Style.font.iconLarge
+                height: 28
+                OpticalGlyph {
+                  anchors.centerIn: parent
+                  width: Style.font.iconLarge
+                  height: Style.font.iconLarge
+                  text: "󰍉"
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.icon
+                  color: root.metaColor
+                }
+              }
+
+              Item {
+                width: parent.width - Style.font.iconLarge - 6
+                height: 28
+
+                Text {
+                  anchors.fill: parent
+                  visible: root.filterText.length === 0
+                  text: "Search clips"
+                  color: root.metaColor
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  verticalAlignment: Text.AlignVCenter
+                }
+
+                TextInput {
+                  id: searchField
+                  anchors.fill: parent
+                  text: root.filterText
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  clip: true
+                  selectByMouse: true
+                  verticalAlignment: TextInput.AlignVCenter
+                  onTextChanged: {
+                    if (text !== root.filterText)
+                      root.setFilter(text)
+                  }
+                  Keys.onPressed: function (event) {
+                    if (event.key === Qt.Key_Escape) {
+                      root.closeSearch()
+                      event.accepted = true
+                    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                      root.pasteSelected()
+                      event.accepted = true
+                    } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_K) {
+                      root.cycleKeep()
+                      event.accepted = true
+                    }
+                  }
+                }
+              }
             }
           }
 
-          // Search stack — closed slot (magnifier on trailing edge).
-          Item {
-            visible: !root.searchOpen
-            width: parent.width - 76
+          Row {
+            id: trailingIcons
+            spacing: 0
             height: 28
 
             Rectangle {
               id: searchOpenBtn
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              width: 28
-              height: 28
+              visible: !root.searchOpen
+              width: Style.bar.iconSlot
+              height: Style.bar.iconSlot
               color: searchOpenMa.containsMouse ? Util.alpha(root.foreground, 0.08) : "transparent"
               radius: 0
-              Text {
+              Item {
                 anchors.centerIn: parent
-                text: "⌕"
-                color: Util.alpha(root.foreground, searchOpenMa.containsMouse ? 1 : 0.8)
-                font.pixelSize: Style.font.icon
+                width: Style.font.iconLarge
+                height: Style.font.iconLarge
+                OpticalGlyph {
+                  anchors.fill: parent
+                  text: "󰍉"
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.icon
+                  color: Util.alpha(root.foreground, searchOpenMa.containsMouse ? 1 : 0.8)
+                }
               }
               MouseArea {
                 id: searchOpenMa
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
+                z: 1
                 onClicked: root.openSearch("")
-              }
-            }
-          }
-
-          // Search stack — open row (28px).
-          Row {
-            visible: root.searchOpen
-            width: parent.width - 76
-            height: 28
-            spacing: 6
-
-            Text {
-              text: "⌕"
-              color: root.metaColor
-              font.pixelSize: Style.font.icon
-              anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Item {
-              width: parent.width - 56
-              height: 28
-
-              Text {
-                anchors.fill: parent
-                visible: root.filterText.length === 0
-                text: "Search clips"
-                color: root.metaColor
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
-                verticalAlignment: Text.AlignVCenter
-              }
-
-              TextInput {
-                id: searchField
-                anchors.fill: parent
-                text: root.filterText
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
-                clip: true
-                selectByMouse: true
-                verticalAlignment: TextInput.AlignVCenter
-                onTextChanged: {
-                  if (text !== root.filterText)
-                    root.setFilter(text)
-                }
-                Keys.onPressed: function (event) {
-                  if (event.key === Qt.Key_Escape) {
-                    root.closeSearch()
-                    event.accepted = true
-                  } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                    root.pasteSelected()
-                    event.accepted = true
-                  } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_K) {
-                    root.cycleKeep()
-                    event.accepted = true
-                  }
-                }
               }
             }
 
             Rectangle {
-              width: 28
-              height: 28
-              color: searchCloseMa.containsMouse ? Util.alpha(root.foreground, 0.08) : "transparent"
+              id: shortcutsBtn
+              width: Style.bar.iconSlot
+              height: Style.bar.iconSlot
+              color: shortcutsMa.containsMouse ? Util.alpha(root.foreground, 0.08) : "transparent"
               radius: 0
-              Text {
+              Item {
                 anchors.centerIn: parent
-                text: "×"
-                color: Util.alpha(root.foreground, searchCloseMa.containsMouse ? 1 : 0.8)
-                font.pixelSize: Style.font.body
+                width: Style.bar.iconCanvas
+                height: Style.bar.iconCanvas
+                OpticalGlyph {
+                  anchors.fill: parent
+                  text: "⌨"
+                  fontFamily: root.fontFamily
+                  fontSize: Style.bar.iconFont
+                  color: Util.alpha(root.foreground, shortcutsMa.containsMouse ? 1 : 0.8)
+                }
               }
-              MouseArea {
-                id: searchCloseMa
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.closeSearch()
-              }
-            }
-          }
-
-          Rectangle {
-            width: 28
-            height: 28
-            color: shortcutsMa.containsMouse ? Util.alpha(root.foreground, 0.08) : "transparent"
-            radius: 0
-            Text {
-              anchors.centerIn: parent
-              text: "⌨"
-              color: Util.alpha(root.foreground, shortcutsMa.containsMouse ? 1 : 0.8)
-              font.pixelSize: Style.font.bodySmall
-            }
               MouseArea {
                 id: shortcutsMa
                 anchors.fill: parent
@@ -646,19 +687,26 @@ Item {
                   root.shortcutsOpen = !root.shortcutsOpen
                 }
               }
-          }
-
-          Rectangle {
-            width: 28
-            height: 28
-            color: issuesMa.containsMouse ? Util.alpha(root.foreground, 0.08) : "transparent"
-            radius: 0
-            Text {
-              anchors.centerIn: parent
-              text: "?"
-              color: Util.alpha(root.foreground, issuesMa.containsMouse ? 1 : 0.8)
-              font.pixelSize: Style.font.body
             }
+
+            Rectangle {
+              id: issuesBtn
+              width: Style.bar.iconSlot
+              height: Style.bar.iconSlot
+              color: issuesMa.containsMouse ? Util.alpha(root.foreground, 0.08) : "transparent"
+              radius: 0
+              Item {
+                anchors.centerIn: parent
+                width: Style.bar.iconCanvas
+                height: Style.bar.iconCanvas
+                OpticalGlyph {
+                  anchors.fill: parent
+                  text: "?"
+                  fontFamily: root.fontFamily
+                  fontSize: Style.bar.iconFont
+                  color: Util.alpha(root.foreground, issuesMa.containsMouse ? 1 : 0.8)
+                }
+              }
               MouseArea {
                 id: issuesMa
                 anchors.fill: parent
@@ -667,6 +715,7 @@ Item {
                 z: 1
                 onClicked: root.openIssues()
               }
+            }
           }
         }
 

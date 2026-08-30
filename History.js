@@ -188,6 +188,25 @@ function removeEntryAt(history, index) {
   return values
 }
 
+// Image paths present in oldHistory but not in newHistory (expiry, delete, cap).
+function imagePathsRemoved(oldHistory, newHistory) {
+  var kept = {}
+  var newList = Array.isArray(newHistory) ? newHistory : []
+  for (var i = 0; i < newList.length; i++) {
+    var entry = normalizeEntry(newList[i])
+    if (entry && entry.type === "image" && entry.path)
+      kept[String(entry.path)] = true
+  }
+  var out = []
+  var oldList = Array.isArray(oldHistory) ? oldHistory : []
+  for (var j = 0; j < oldList.length; j++) {
+    var old = normalizeEntry(oldList[j])
+    if (old && old.type === "image" && old.path && !kept[String(old.path)])
+      out.push(String(old.path))
+  }
+  return out
+}
+
 function updateEntryAt(history, index, mutator) {
   var values = Array.isArray(history) ? history.slice() : []
   var target = Number(index)
