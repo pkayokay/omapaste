@@ -1,113 +1,103 @@
 # Omarchy plugin (Quattro)
 
-Install omapaste as an [Omarchy](https://omarchy.org) shell plugin. Plugin ID: `io.github.pkayokay.omapaste`.
+Plugin ID: `io.github.pkayokay.omapaste`.
 
-The repo ships both the **Rust GTK daemon** and a **Quattro wrapper** (`manifest.json`, `Service.qml`, `Overlay.qml`). You need both: the plugin starts and summons the bar; the binary watches the clipboard and draws the UI.
+Omapaste runs **entirely inside Omarchy shell** (service + overlay). Clipboard watch and UI live in the plugin checkout — there is no separate `omapaste` binary.
 
 ## Requirements
 
-- **Rust (stable)** with `cargo` — `./install.sh` builds the binary
-- GTK 4 and gtk4-layer-shell
+- Omarchy with Quattro / `omarchy-shell`
 - `wl-clipboard` (`wl-copy` / `wl-paste`)
-- `wtype` (for paste into the last focused app)
-- Hyprland (default keybind and focus restore)
+- `wtype` (paste into the last focused app)
+- `python` and `jq` (capture helper)
+- Hyprland (focus restore; optional toggle bind)
 
 On Omarchy / Arch:
 
 ```bash
-sudo pacman -S --needed rust gtk4 gtk4-layer-shell wl-clipboard wtype pkgconf python
+sudo pacman -S --needed wl-clipboard wtype python jq
 ```
 
-`./install.sh --hypr` uses `python3` only to edit `~/.config/hypr/*.lua`. The app is not Python.
+## Install
 
-## Install (plugin + binary)
-
-`omarchy plugin add` clones the Quattro wrapper only — it does **not** build Rust. Run `install.sh` after adding the plugin (or from a git clone).
-
-### From Omarchy or the marketplace
-
-```bash
-omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
-~/.config/omarchy/plugins/io.github.pkayokay.omapaste/install.sh --hypr
-```
-
-### From GitHub
-
-```bash
-git clone https://github.com/pkayokay/omapaste.git
-cd omapaste
-./install.sh --hypr          # builds binary; opt-in Hyprland bind + autostart
-omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
-```
-
-`./install.sh --hypr` is the **only** step that edits Hyprland config (`bindings.lua`, `autostart.lua`, layer rule). It writes `.bak.*` backups first. Plugin enable/disable alone does not touch those files.
-
-If the binary is already on `PATH`:
+One command — no `./install.sh`, no Rust, no cargo:
 
 ```bash
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
 ```
 
-### What `--hypr` sets up
+That enables the plugin and registers Omapaste in app search (desktop entry + menu route) on first load. To reinstall launcher files manually: `./install-launcher.sh`.
 
-- **Super+Shift+V** → `omapaste toggle` (Super+Ctrl+V stays on Omarchy’s built-in clipboard picker)
-- Autostart `omapaste daemon`
-- Layer rule so Hyprland does not fade the bar (it slides itself)
-
-Without `--hypr`, `./install.sh` only installs `~/.local/bin/omapaste`. Bind and autostart yourself.
-
-## From source only (no plugin)
-
-```bash
-git clone https://github.com/pkayokay/omapaste.git
-cd omapaste
-./install.sh --hypr
-omapaste daemon
-```
-
-## Update
-
-After pulling a new release:
-
-```bash
-cd ~/.config/omarchy/plugins/io.github.pkayokay.omapaste
-git pull
-./install.sh
-omapaste quit && omapaste daemon
-```
-
-Or remove and re-add:
-
-```bash
-omarchy plugin remove io.github.pkayokay.omapaste
-omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
-```
-
-Rebuild the binary whenever Rust sources change.
-
-## Remove
-
-```bash
-omarchy plugin remove io.github.pkayokay.omapaste
-omapaste quit
-```
-
-This removes the plugin listing only. It does not uninstall `~/.local/bin/omapaste`, delete history, or undo Hyprland edits from `./install.sh --hypr`. Undo Super+Shift+V and autostart in `~/.config/hypr/` manually if you added them with `--hypr`.
-
-## Summon from the shell
+Summon to confirm:
 
 ```bash
 omarchy-shell shell summon io.github.pkayokay.omapaste '{}'
 ```
 
-Enabling the plugin also starts the daemon via `Service.qml`.
+### Optional Super+Shift+V
+
+Add to `~/.config/hypr/bindings.lua` (edit yourself; the plugin never rewrites Hyprland config):
+
+```lua
+o.bind("SUPER + SHIFT + V", "Omapaste", "omarchy-shell shell toggle io.github.pkayokay.omapaste '{}'")
+```
+
+Optional layer rule in `~/.config/hypr/hyprland.lua` if animations fight the bar:
+
+```lua
+hl.layer_rule({ match = { namespace = "omapaste" }, no_anim = true, animation = "none" })
+```
+
+Keep **Super+Ctrl+V** for Omarchy’s built-in clipboard.
+
+## Update
+
+```bash
+cd ~/.config/omarchy/plugins/io.github.pkayokay.omapaste
+git pull
+omarchy restart shell
+```
+
+Or:
+
+```bash
+omarchy plugin update io.github.pkayokay.omapaste
+omarchy restart shell
+```
+
+## Remove
+
+```bash
+omarchy plugin remove io.github.pkayokay.omapaste
+```
+
+Watchers stop when the plugin is disabled/removed (and when the shell exits). This does **not** delete:
+
+- `~/.local/state/omapaste/` (history + images)
+- `~/.config/omapaste/qml-config.json`
+- Any Hyprland bind you added by hand
+
+Remove those manually if you want a full wipe. Remove the Super+Shift+V line from `bindings.lua` if you added it.
+
+## Summon / hide / toggle
+
+```bash
+omarchy-shell shell summon io.github.pkayokay.omapaste '{}'
+omarchy-shell shell hide io.github.pkayokay.omapaste
+omarchy-shell shell toggle io.github.pkayokay.omapaste '{}'
+```
+
+Use **toggle** for Super+Shift+V so the bind opens and closes the bar.
 
 ## Security and scope
 
-- Runs unsandboxed inside `omarchy-shell` and shells out to `omapaste`
-- Clipboard history stays local in SQLite under `~/.local/share/omapaste/`
-- Super+Ctrl+V remains Omarchy’s built-in clipboard overlay — use **Super+Shift+V** for omapaste
+- Runs unsandboxed inside `omarchy-shell`; shells out to `wl-paste` / `wl-copy` / `wtype` / `hyprctl`
+- History stays local under `~/.local/state/omapaste/`
+- Drag cards into other apps (text and images)
+- Super+Ctrl+V remains Omarchy’s built-in clipboard
 
-## Marketplace listing
+## Marketplace
 
-Listed on [omarchyplugins.com](https://omarchyplugins.com/plugin.html?id=io.github.pkayokay.omapaste) (manual setup — `install.sh` is still required after `omarchy plugin add`). Maintainer workflow: [omarchy-marketplace.md](omarchy-marketplace.md).
+Catalog page: [omarchyplugins.com — Omapaste](https://omarchyplugins.com/plugin.html?id=io.github.pkayokay.omapaste).
+
+After merging **0.3.0** to `main`, re-verify the catalog so the listing can use **standard** `omarchy plugin add … --enable` (no manual `install.sh`). Maintainer notes: [omarchy-marketplace.md](omarchy-marketplace.md).

@@ -1,12 +1,12 @@
 [Desktop Entry]
 Name=Omapaste
 Comment=Clipboard history for Omarchy
-Exec=omapaste toggle
+Exec=sh -c "omarchy-shell shell toggle io.github.pkayokay.omapaste '{}'"
 Icon=omapaste
 Terminal=false
 Type=Application
 Categories=Utility;
-Keywords=clipboard;paste;history;omarchy;
+Keywords=clipboard;paste;history;omapaste;omarchy;
 StartupNotify=false
 DBusActivatable=false
 X-GNOME-Autostart-enabled=false

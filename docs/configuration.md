@@ -1,80 +1,46 @@
-# Configuration
+# Configuration (QML / Quattro)
 
-Runtime settings, keep time, data paths, and CLI commands.
+## `qml-config.json`
 
-## Config file
+Optional settings at `~/.config/omapaste/qml-config.json`. If missing, defaults apply (same spirit as the old `config.toml`).
 
-Created on first launch at `~/.config/omapaste/config.toml`:
-
-```toml
-default_keep = "1d"      # 1h | 1d | 7d | forever
-max_items = 200
-max_bytes = 8000000
-ignore_secrets = true
-paste_keys = "auto"      # auto | shift-insert | ctrl-v
+```json
+{
+  "default_keep": "1d",
+  "max_items": 300,
+  "paste_keys": "auto",
+  "ignore_secrets": true
+}
 ```
 
-| Key | Default | Purpose |
+| Key | Values | Meaning |
 | --- | --- | --- |
-| `default_keep` | `1d` | Keep time for new clips (`1h`, `1d`, `7d`, `forever`) |
-| `max_items` | `200` | Hard cap on stored clips; forever clips are pruned last |
-| `max_bytes` | `8000000` | Skip clipboard payloads larger than this (bytes) |
-| `ignore_secrets` | `true` | Skip password-manager / secret MIME types |
-| `paste_keys` | `auto` | Keys sent after Enter when pasting into the last app |
+| `default_keep` | `1h`, `1d`, `7d`, `forever` | Keep preset for new clips |
+| `max_items` | positive int | Cap on stored clips |
+| `paste_keys` | `auto`, `shift-insert`, `ctrl-v` | Keys sent after Enter-to-paste (`auto` uses Shift+Insert in terminals, Ctrl+V elsewhere) |
+| `ignore_secrets` | bool | Skip password-manager / sensitive clipboard (`false` to allow) |
 
-`paste_keys = "auto"` sends Shift+Insert in terminals and Ctrl+V everywhere else, matching Omarchy’s universal clipboard.
+Example file in the repo: [share/qml-config.example.json](../share/qml-config.example.json).
+
+Per-clip keep is cycled in the UI with **Ctrl+K** (does not change `default_keep`).
 
 ## Toggle shortcut
 
-Omapaste does **not** register a global hotkey and there is no `toggle_key` in `config.toml`. On Hyprland, bind `omapaste toggle` yourself:
+Omapaste does **not** register a global hotkey. Bind toggle yourself in Hyprland — see [omarchy-plugin.md](omarchy-plugin.md#optional-supershiftv).
 
-```lua
--- ~/.config/hypr/bindings.lua
-o.bind("SUPER + ALT + V", "Omapaste", "omapaste toggle")
-```
-
-`./install.sh --hypr` adds **Super+Shift+V** once (with a `.bak.*` backup). Edit or remove that line to use a different key.
-
-Without a Hyprland bind: `omapaste toggle` from a terminal, script, or your compositor’s shortcut system. With the Quattro plugin enabled, the shell can also summon the overlay (`omarchy-shell shell summon io.github.pkayokay.omapaste '{}'`).
-
-**In-bar shortcuts** (search, paste, Ctrl+K, drag, etc.) are fixed — see the keyboard icon in the bar.
-
-## Keep time
-
-New clips use `default_keep` until you change an individual card.
-
-- Press **Ctrl+K** in the bar to cycle: 1h → 1d → 7d → forever
-- Expired clips are deleted in the background
-- Forever clips stay until you delete them and are dropped last when `max_items` is exceeded
+Without a bind: `omarchy-shell shell summon io.github.pkayokay.omapaste '{}'`.
 
 ## Runtime files
 
 | Path | What |
 | --- | --- |
-| `~/.config/omapaste/config.toml` | Settings above |
-| `~/.local/share/omapaste/history.sqlite` | Clip database |
-| `~/.local/share/omapaste/images/` | PNG payloads as `{hash}.bin` |
-| `~/.local/state/omarchy/current/theme/` | Omarchy theme (`colors.toml`) — do not edit `/usr/share/omarchy/` |
+| `~/.config/omapaste/qml-config.json` | Settings above |
+| `~/.local/state/omapaste/history.sqlite` | Clip history (SQLite; auto-migrates old `qml-history.json`) |
+| `~/.local/state/omapaste/qml-images/` | PNG payloads |
+| `~/.local/state/omapaste/qml-ignore-hash` | Ephemeral hash so self-copies are not re-ingested |
 
-To reset sample clips (text only): quit the daemon, delete `history.sqlite`, start again. Seeding runs only when the DB file is missing.
+To reset sample tips: disable the plugin, delete `history.sqlite` (and the `.stamp` / stage files if present), enable again (seeds only when the DB has no rows).
 
-## Commands
+## Legacy GTK paths
 
-```bash
-omapaste daemon    # start the watcher (autostart this)
-omapaste toggle    # show / hide the bar (default if you pass no command)
-omapaste show
-omapaste hide
-omapaste quit
-omapaste --version
-```
-
-`start` is an alias for `daemon`. `stop` is an alias for `quit`.
-
-The daemon is a single GTK application. `toggle` / `show` / `hide` talk to it over the session bus (`io.github.pkayokay.omapaste`). A second `omapaste daemon` does not replace a running process — `quit` first.
-
-Debug:
-
-```bash
-RUST_LOG=debug omapaste daemon
-```
+The old daemon used `~/.config/omapaste/config.toml` and `~/.local/share/omapaste/history.sqlite`. Those are unused by the QML plugin. See [legacy-gtk.md](legacy-gtk.md).

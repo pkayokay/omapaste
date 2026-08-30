@@ -2,7 +2,7 @@
 
 Steps for shipping a new omapaste version.
 
-**Releases are not tied to the marketplace.** Tag, push, and GitHub Release are enough for users (`git pull`, `./install.sh`). [omarchyplugins.com](https://omarchyplugins.com/) re-verify is a separate, optional step — only when you want the catalog page updated (see [omarchy-marketplace.md](omarchy-marketplace.md)).
+**Releases are not tied to the marketplace.** Tag, push, and GitHub Release are enough for users (`omarchy plugin update` / `git pull` in the plugin checkout). [omarchyplugins.com](https://omarchyplugins.com/) re-verify is a separate, optional step — only when you want the catalog page updated (see [omarchy-marketplace.md](omarchy-marketplace.md)).
 
 ## Versioning (Option A)
 
@@ -21,15 +21,16 @@ If a release mixes features and fixes, bump **minor**. Use **patch** only when n
 1. **Finish changes on `main`** — feature/fix commits merged or committed locally.
 2. **Run tests**
    ```bash
-   cargo test
-   cargo fmt --check
+   node tests/qml-parity.mjs
+   bash tests/qml-shell-parity.sh
+   omarchy plugin validate "$(pwd)"
    ```
-   If you touched overlay construction: `cargo test -- --ignored --test-threads=1` (needs a display).
+   Legacy GTK tree (optional): `cargo test` / `cargo fmt --check`.
 3. **Pick a version** using the table above.
-4. **Bump versions** (all three must match):
-   - `Cargo.toml` → `version`
+4. **Bump versions** (must match):
    - `manifest.json` → `version`
    - `CHANGELOG.md` → new `## X.Y.Z` section with user-facing bullets
+   - `Cargo.toml` → `version` (legacy GTK crate; keep in sync)
 5. **Update docs if behavior changed**
    - `README.md` usage table or install blurb
    - `docs/configuration.md` for new config keys
@@ -45,7 +46,7 @@ If a release mixes features and fixes, bump **minor**. Use **patch** only when n
 A release is **tag + GitHub Release**, not just the git tag. Users browsing [github.com/pkayokay/omapaste/releases](https://github.com/pkayokay/omapaste/releases) only see GitHub Releases.
 
 ```bash
-git add Cargo.toml manifest.json CHANGELOG.md   # plus any doc/UI files
+git add manifest.json Cargo.toml CHANGELOG.md   # plus any doc/UI files
 git commit -m "Release vX.Y.Z."
 git tag -a vX.Y.Z -m "Release vX.Y.Z."
 git push origin main
@@ -78,9 +79,11 @@ gh release delete vX.Y.Z --yes   # if you already published one
 ## Load locally
 
 ```bash
-./install.sh
-omapaste quit && omapaste daemon
-# Super+Shift+V
+ln -sfn "$(pwd)" ~/.config/omarchy/plugins/io.github.pkayokay.omapaste
+omarchy plugin enable io.github.pkayokay.omapaste
+omarchy restart shell
+# Super+Shift+V (if bound) or:
+omarchy-shell shell summon io.github.pkayokay.omapaste '{}'
 ```
 
 ## Marketplace (optional)
@@ -91,7 +94,7 @@ Only if you want [omarchyplugins.com](https://omarchyplugins.com/) to show the n
 
 1. Use the commit SHA **of the release tag** (the version-bump commit).
 2. Open the [plugin verification form](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/new?template=verify-plugin.yml).
-3. Choose **Verify and publish a newer upstream commit**.
+3. Prefer **Verify the listed snapshot and enable standard installation** (one-command `omarchy plugin add` is honest as of 0.3.0).
 4. Plugin ID: `io.github.pkayokay.omapaste` · repo: `https://github.com/pkayokay/omapaste` · full 40-char SHA.
 5. After approval, update **Approved snapshot** in [omarchy-marketplace.md](omarchy-marketplace.md).
 
@@ -101,8 +104,8 @@ Do not open a second submission issue. Close a mistaken verification issue befor
 
 | File | What to update |
 | --- | --- |
-| `Cargo.toml` | `version` |
 | `manifest.json` | `version` |
 | `CHANGELOG.md` | Release notes |
+| `Cargo.toml` | `version` (legacy crate sync) |
 | `README.md` | Usage/features if user-visible |
 | `docs/omarchy-marketplace.md` | Approved snapshot after catalog promotion |

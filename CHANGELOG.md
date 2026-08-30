@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.0
+
+- Quattro-native rewrite: clipboard watch + bottom bar in QML (no Rust daemon)
+- One-command install: `omarchy plugin add … --enable` (no `./install.sh`)
+- Default `max_items` raised to 300
+- SQLite history at `~/.local/state/omapaste/history.sqlite` (migrates old `qml-history.json`); config `~/.config/omapaste/qml-config.json`
+- GTK feature parity: search, keep cycle, rename, Enter paste, shortcuts, image seeds, secret skip
+- Search: bordered field, clear (✕) in the magnifier slot, arrow selection while filtering (including after clear)
+- Delete / Backspace removes the selected clip (Backspace still edits search when the query has text)
+- Card click selects reliably after search or rename; bar keeps keyboard focus for arrows / Delete
+- Drag cards into other apps (Qt Wayland drag; panel unmaps on drag)
+- Ignore window + filters so image drag file URLs do not pollute history as text clips
+- Watch any advertised clipboard image type (PNG/JPEG/WebP/GIF/…), not PNG-only
+- Harden image paths (only `qml-images/`), `chmod 600` history, sanitize mime extensions
+- Honor `ignore_secrets` from config; clamp `max_bytes`
+- Paste runs after the bar hides; copied clips move to front when the bar closes
+- Auto-install launcher desktop entry on first service load
+- README / marketplace screenshots updated for the QML bar
+- Rust/GTK tree under `src/` retained as legacy reference only
+
 ## 0.2.1
 
 - Report-issue icon closes the bar after opening the GitHub issue tracker
