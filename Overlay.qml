@@ -501,12 +501,17 @@ Item {
     if (!row)
       return
     var before = root.history
+    var keepIndex = root.selectedIndex
     root.history = History.removeEntryAt(root.history, row.historyIndex)
     root.unlinkImagePaths(History.imagePathsRemoved(before, root.history))
     root.saveHistory()
-    if (root.selectedIndex >= displayModel.count - 1)
-      root.selectedIndex = Math.max(0, displayModel.count - 2)
     root.rebuildDisplay()
+    if (displayModel.count === 0)
+      root.selectedIndex = 0
+    else if (keepIndex >= displayModel.count)
+      root.selectedIndex = displayModel.count - 1
+    else
+      root.selectedIndex = keepIndex
   }
 
   function cycleKeep() {
@@ -669,20 +674,33 @@ Item {
     exclusionMode: ExclusionMode.Ignore
 
     Keys.onPressed: function (event) {
-      if (event.key !== Qt.Key_Escape)
-        return
       if (root.kindEditing) {
-        root.cancelKindEdit()
+        if (event.key === Qt.Key_Escape) {
+          root.cancelKindEdit()
+          event.accepted = true
+        }
+        return
+      }
+      if (event.key === Qt.Key_Escape) {
+        if (root.searchOpen)
+          return
+        if (root.shortcutsOpen) {
+          root.shortcutsOpen = false
+          event.accepted = true
+        } else if (root.opened) {
+          root.dismiss()
+          event.accepted = true
+        }
+        return
+      }
+      // Fallback when focus isn't on keyCatcher (e.g. after clicking a card).
+      if (event.key === Qt.Key_Delete) {
+        root.removeSelected()
         event.accepted = true
         return
       }
-      if (root.searchOpen)
-        return
-      if (root.shortcutsOpen) {
-        root.shortcutsOpen = false
-        event.accepted = true
-      } else if (root.opened) {
-        root.dismiss()
+      if (event.key === Qt.Key_Backspace && (!root.searchOpen || root.filterText.length === 0)) {
+        root.removeSelected()
         event.accepted = true
       }
     }
@@ -858,8 +876,12 @@ Item {
                       } else if (event.key === Qt.Key_Delete) {
                         root.removeSelected()
                         event.accepted = true
+                      } else if (event.key === Qt.Key_Backspace && root.filterText.length === 0) {
+                        // Empty query: Backspace/Delete-key removes the clip (matches bar mode).
+                        root.removeSelected()
+                        event.accepted = true
                       }
-                      // Backspace stays in the field to edit the query.
+                      // Backspace with text stays in the field to edit the query.
                     }
                   }
                 }
