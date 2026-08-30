@@ -705,85 +705,95 @@ Item {
               }
             }
 
-            Row {
+            Rectangle {
               visible: root.searchOpen
               width: parent.width
               height: 28
-              spacing: 6
+              color: Util.alpha(root.foreground, 0.04)
+              border.color: root.border
+              border.width: 1
+              radius: 0
 
-              Item {
-                width: Style.font.iconLarge
-                height: 28
-                OpticalGlyph {
-                  anchors.centerIn: parent
+              Row {
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                spacing: 6
+
+                Item {
                   width: Style.font.iconLarge
-                  height: Style.font.iconLarge
-                  text: "󰍉"
-                  fontFamily: root.fontFamily
-                  fontSize: Style.font.icon
-                  color: root.metaColor
-                }
-              }
-
-              Item {
-                width: parent.width - Style.font.iconLarge - 6
-                height: 28
-
-                Text {
-                  anchors.fill: parent
-                  visible: root.filterText.length === 0
-                  text: "Search clips"
-                  color: root.metaColor
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  verticalAlignment: Text.AlignVCenter
-                }
-
-                TextInput {
-                  id: searchField
-                  anchors.fill: parent
-                  text: root.filterText
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  clip: true
-                  selectByMouse: true
-                  verticalAlignment: TextInput.AlignVCenter
-                  onTextChanged: {
-                    if (text !== root.filterText)
-                      root.setFilter(text)
+                  height: parent.height
+                  OpticalGlyph {
+                    anchors.centerIn: parent
+                    width: Style.font.iconLarge
+                    height: Style.font.iconLarge
+                    text: "󰍉"
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.icon
+                    color: root.metaColor
                   }
-                  Keys.onPressed: function (event) {
-                    var ctrl = !!(event.modifiers & Qt.ControlModifier)
-                    if (event.key === Qt.Key_Escape) {
-                      root.closeSearch()
-                      event.accepted = true
-                    } else if (event.key === Qt.Key_Left) {
-                      root.select(-1)
-                      event.accepted = true
-                    } else if (event.key === Qt.Key_Right) {
-                      root.select(1)
-                      event.accepted = true
-                    } else if (event.key === Qt.Key_Home) {
-                      root.selectAbsolute(0)
-                      event.accepted = true
-                    } else if (event.key === Qt.Key_End) {
-                      root.selectAbsolute(displayModel.count - 1)
-                      event.accepted = true
-                    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                      root.pasteSelected()
-                      event.accepted = true
-                    } else if (ctrl && event.key === Qt.Key_K) {
-                      root.cycleKeep()
-                      event.accepted = true
-                    } else if (ctrl && event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
-                      root.pasteIndex(event.key - Qt.Key_1)
-                      event.accepted = true
-                    } else if (event.key === Qt.Key_Delete) {
-                      root.removeSelected()
-                      event.accepted = true
+                }
+
+                Item {
+                  width: Math.max(0, parent.width - Style.font.iconLarge - 6)
+                  height: parent.height
+
+                  Text {
+                    anchors.fill: parent
+                    visible: root.filterText.length === 0
+                    text: "Search clips"
+                    color: root.metaColor
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    verticalAlignment: Text.AlignVCenter
+                  }
+
+                  TextInput {
+                    id: searchField
+                    anchors.fill: parent
+                    text: root.filterText
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    clip: true
+                    selectByMouse: true
+                    verticalAlignment: TextInput.AlignVCenter
+                    onTextChanged: {
+                      if (text !== root.filterText)
+                        root.setFilter(text)
                     }
-                    // Backspace stays in the field to edit the query.
+                    Keys.onPressed: function (event) {
+                      var ctrl = !!(event.modifiers & Qt.ControlModifier)
+                      if (event.key === Qt.Key_Escape) {
+                        root.closeSearch()
+                        event.accepted = true
+                      } else if (event.key === Qt.Key_Left) {
+                        root.select(-1)
+                        event.accepted = true
+                      } else if (event.key === Qt.Key_Right) {
+                        root.select(1)
+                        event.accepted = true
+                      } else if (event.key === Qt.Key_Home) {
+                        root.selectAbsolute(0)
+                        event.accepted = true
+                      } else if (event.key === Qt.Key_End) {
+                        root.selectAbsolute(displayModel.count - 1)
+                        event.accepted = true
+                      } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                        root.pasteSelected()
+                        event.accepted = true
+                      } else if (ctrl && event.key === Qt.Key_K) {
+                        root.cycleKeep()
+                        event.accepted = true
+                      } else if (ctrl && event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
+                        root.pasteIndex(event.key - Qt.Key_1)
+                        event.accepted = true
+                      } else if (event.key === Qt.Key_Delete) {
+                        root.removeSelected()
+                        event.accepted = true
+                      }
+                      // Backspace stays in the field to edit the query.
+                    }
                   }
                 }
               }
