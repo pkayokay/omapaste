@@ -1096,6 +1096,7 @@ Item {
                       visible: !card.editingKind
                       width: parent.width
                       text: card.kind
+                      textFormat: Text.PlainText
                       color: card.ink
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.subtitle
@@ -1185,6 +1186,7 @@ Item {
                     visible: card.entryType !== "image"
                     width: parent.width - 24
                     text: card.previewText
+                    textFormat: Text.PlainText
                     color: card.ink
                     font.family: root.monoFamily
                     font.pixelSize: Style.font.body
@@ -1203,6 +1205,7 @@ Item {
                   Text {
                     anchors.centerIn: parent
                     text: card.charLabel
+                    textFormat: Text.PlainText
                     color: card.selected ? Util.alpha(root.foreground, 0.92) : root.metaColor
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.bodySmall
