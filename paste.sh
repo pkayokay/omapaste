@@ -1,0 +1,108 @@
+#!/bin/bash
+# Copy or paste a history entry for the QML omapaste experiment.
+
+set -euo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omapaste"
+IGNORE_FILE="$STATE_DIR/qml-ignore-hash"
+mkdir -p "$STATE_DIR"
+
+mode="${1:-}"
+shift || true
+
+remember_ignore() {
+  local hash="$1"
+  if [[ -n "$hash" ]]; then
+    printf '%s' "$hash" >"$IGNORE_FILE"
+    chmod 600 "$IGNORE_FILE" 2>/dev/null || true
+  fi
+}
+
+focus_address() {
+  local address="${1:-}"
+  if [[ -n "$address" ]]; then
+    hyprctl dispatch focuswindow "address:$address" >/dev/null 2>&1 || true
+    sleep 0.05
+  fi
+}
+
+window_is_terminal() {
+  local address="${1:-}"
+  local json class
+  json=$(hyprctl activewindow -j 2>/dev/null || true)
+  if [[ -n "$address" ]]; then
+    # Best-effort: after focus, active window should be the target.
+    json=$(hyprctl activewindow -j 2>/dev/null || true)
+  fi
+  class=$(jq -r '.class // empty' <<<"$json" 2>/dev/null || true)
+  case "${class,,}" in
+    *kitty*|*alacritty*|*foot*|*wezterm*|*ghostty*|*konsole*|*gnome-terminal*|*tilix*|*termite*|*xdg-terminal-exec*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+send_paste() {
+  local paste_keys="${1:-auto}"
+  local address="${2:-}"
+  sleep 0.12
+  case "$paste_keys" in
+    shift-insert)
+      wtype -M shift -k Insert -m shift 2>/dev/null || true
+      ;;
+    ctrl-v)
+      wtype -M ctrl -k v -m ctrl 2>/dev/null || true
+      ;;
+    *)
+      if window_is_terminal "$address"; then
+        wtype -M shift -k Insert -m shift 2>/dev/null || wtype -M ctrl -k v -m ctrl 2>/dev/null || true
+      else
+        wtype -M ctrl -k v -m ctrl 2>/dev/null || wtype -M shift -k Insert -m shift 2>/dev/null || true
+      fi
+      ;;
+  esac
+}
+
+case "$mode" in
+copy-text)
+  text="${1:-}"
+  hash="${2:-}"
+  remember_ignore "$hash"
+  printf '%s' "$text" | wl-copy
+  ;;
+paste-text)
+  text="${1:-}"
+  hash="${2:-}"
+  address="${3:-}"
+  paste_keys="${4:-auto}"
+  remember_ignore "$hash"
+  printf '%s' "$text" | wl-copy
+  focus_address "$address"
+  send_paste "$paste_keys" "$address"
+  ;;
+copy-image)
+  path="${1:-}"
+  mime="${2:-image/png}"
+  hash="${3:-}"
+  [[ -f "$path" ]] || exit 1
+  remember_ignore "$hash"
+  wl-copy --type "$mime" <"$path"
+  ;;
+paste-image)
+  path="${1:-}"
+  mime="${2:-image/png}"
+  hash="${3:-}"
+  address="${4:-}"
+  paste_keys="${5:-auto}"
+  [[ -f "$path" ]] || exit 1
+  remember_ignore "$hash"
+  wl-copy --type "$mime" <"$path"
+  focus_address "$address"
+  send_paste "$paste_keys" "$address"
+  ;;
+*)
+  echo "Usage: $0 copy-text|paste-text|copy-image|paste-image ..." >&2
+  exit 2
+  ;;
+esac

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0-qml-exp (experiment branch — unreleased)
+
+- Quattro-native rewrite: clipboard watch + bottom bar in QML (no Rust daemon required)
+- One-command install: `omarchy plugin add … --enable`
+- JSON history, keep presets, search, paste-into-last-app, shortcuts panel
+- Config: `~/.config/omapaste/qml-config.json`
+- Drag-into-apps not supported on this path (copy/paste instead)
+- Rust/GTK tree retained as legacy reference
+
 ## 0.2.1
 
 - Report-issue icon closes the bar after opening the GitHub issue tracker

@@ -30,14 +30,15 @@ Do **not** open a second submission issue for the same plugin. Update the existi
 
 ## What users actually do (no marketplace step)
 
-See [omarchy-plugin.md](omarchy-plugin.md) for install, update, and remove. Short version:
+See [omarchy-plugin.md](omarchy-plugin.md). On the **QML experiment branch**:
 
 ```bash
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
-~/.config/omarchy/plugins/io.github.pkayokay.omapaste/install.sh --hypr
 ```
 
-Update after a release: `git pull` in the plugin dir, `./install.sh`, `omapaste quit && omapaste daemon`.
+Optional hand-edited Hyprland bind for Super+Shift+V (see plugin doc). No `./install.sh`.
+
+On **main** (GTK era, until merge), users still need `install.sh` after `plugin add` — catalog may show **Manual setup**.
 
 ## When to open a marketplace issue again
 
@@ -105,7 +106,7 @@ TARGET_SHA
 - [x] I understand that only the exact target commit can become a verified marketplace snapshot and that verification is not a security audit.
 ```
 
-Do **not** add `### Standard installation acknowledgment` unless requesting removal of manual-setup (standard install command on the catalog). Omapaste is listed as **manual setup** — `install.sh` is still required after `omarchy plugin add`.
+Do **not** add `### Standard installation acknowledgment` on main’s GTK listing. After the **QML port is merged** and one-command install is honest, use verification action **Verify the listed snapshot and enable standard installation** plus the standard-installation acknowledgment (see [TEMP-qml-port-plan.md](TEMP-qml-port-plan.md) Phase 3).
 
 ```bash
 gh issue create \

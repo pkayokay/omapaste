@@ -1,31 +1,49 @@
 # AGENTS.md
 
-Development contract for omapaste. User-facing docs: [README.md](README.md), [docs/](docs/) (start with [docs/release.md](docs/release.md) for shipping a version). Marketplace re-verify for agents: [docs/omarchy-marketplace.md § Agent](docs/omarchy-marketplace.md#agent-re-verify-the-catalog).
+Development contract for omapaste.
 
-Omapaste is a **Rust GTK4** clipboard-history bar for Omarchy / Hyprland. It is **one GTK application**: the daemon owns the window and the clipboard watcher. `toggle` / `show` / `hide` / `quit` are extra invocations of the same binary; they talk to that process over the session bus (`io.github.pkayokay.omapaste`). A second `omapaste daemon` does not replace a running binary — quit first.
+> **Branch `experiment/qml-feature-parity`:** product path is Quattro-native QML (no Rust daemon). Read [docs/TEMP-qml-port-plan.md](docs/TEMP-qml-port-plan.md) and [docs/omarchy-plugin.md](docs/omarchy-plugin.md) first. User docs: [README.md](README.md). Rust/GTK under `src/` is **legacy** — [docs/legacy-gtk.md](docs/legacy-gtk.md). Marketplace: [docs/omarchy-marketplace.md](docs/omarchy-marketplace.md).
 
-## First-time setup
-
-Install omapaste per [README.md](README.md) (clone, `./install.sh`, optional plugin). You need a Wayland/Hyprland session to exercise the bar; `cargo test` does not.
-
-Build dependencies on Omarchy / Arch: [docs/omarchy-plugin.md](docs/omarchy-plugin.md#requirements). Then:
+## QML daily loop (this branch)
 
 ```bash
-git clone https://github.com/pkayokay/omapaste.git
-cd omapaste
+# edit Service.qml Overlay.qml History.js Config.js capture.sh paste.sh
+omarchy plugin validate "$(pwd)"
+# after .pragma library JS changes:
+omarchy restart shell
+omarchy-shell shell summon io.github.pkayokay.omapaste '{}'
+```
+
+Live plugin checkout (dev):
+
+```bash
+ln -sfn "$(pwd)" ~/.config/omarchy/plugins/io.github.pkayokay.omapaste
+omarchy plugin enable io.github.pkayokay.omapaste
+```
+
+Do **not** require `./install.sh` or `omapaste` on `PATH`. Do **not** `pkill` Omarchy’s stock clipboard watchers.
+
+---
+
+## Legacy GTK / Rust (inactive on this branch)
+
+Omapaste-on-`main` is a **Rust GTK4** clipboard-history bar: the daemon owns the window and the clipboard watcher. `toggle` / `show` / `hide` / `quit` talk over the session bus (`io.github.pkayokay.omapaste`).
+
+### First-time setup (legacy)
+
+Install per [docs/legacy-gtk.md](docs/legacy-gtk.md). `cargo test` does not need a display.
+
+```bash
 cargo test
 ```
 
-If the binary is not on `PATH` yet: `./install.sh` (add `--hypr` for Super+Shift+V bind and autostart).
-
-## Daily loop
+### Daily loop (legacy)
 
 ```bash
 cargo test
 cargo fmt
 ./install.sh
-omapaste quit && omapaste daemon     # load the new binary
-# Super+Shift+V — do not use Super+Ctrl+V
+omapaste quit && omapaste daemon
 ```
 
 GTK overlay smoke (needs a display, single-threaded):
@@ -48,7 +66,19 @@ journalctl --user -u omapaste.service -n 50 --no-pager
 
 Look for panics and `Theme parser error`. Invalid GTK CSS (for example `overflow`) shows up there, not as a compile error.
 
-## Where to change what
+## Where to change what (QML — this branch)
+
+| Task | Files |
+| --- | --- |
+| Bar layout, keys, search, cards | `Overlay.qml` |
+| Clipboard watch / history write | `Service.qml` |
+| History helpers (keep, filter, rename) | `History.js` |
+| Config defaults / parse | `Config.js` |
+| Capture from clipboard | `capture.sh` |
+| Paste / copy / focus | `paste.sh` |
+| Manifest | `manifest.json` |
+
+## Where to change what (legacy GTK)
 
 | Task | Files |
 | --- | --- |
