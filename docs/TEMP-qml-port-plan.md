@@ -54,7 +54,7 @@ After `History.js` / `Config.js` edits: always `omarchy restart shell` (`.pragma
 | Config caps / paste_keys / default_keep / max_bytes | toml | qml-config.json | unit Config.js |
 | One-command install | no | yes (docs) | validate; no binary refs in QML |
 | Optional Hypr bind (no install.sh) | --hypr | `shell toggle` in docs | docs |
-| Drag card into apps | yes | **unsupported** (documented) | accepted gap |
+| Drag card into apps | yes | yes (Qt drag; panel unmaps on drag) | unit drag helpers + manual UI |
 | Standalone without Omarchy | yes | **out of scope** | accepted gap |
 | Sample image seeds | yes | yes (red + blue PNG) | Service seedImageProc + samples |
 

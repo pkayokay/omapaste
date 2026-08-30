@@ -76,6 +76,75 @@ function isExpired(entry, nowSecs) {
   return Number(nowSecs) >= until
 }
 
+function decodedPathFromLine(line) {
+  var s = String(line || "").trim()
+  if (s.indexOf("file://") !== 0)
+    return s
+  var rest = s.substring(7)
+  try {
+    return decodeURIComponent(rest)
+  } catch (e) {
+    return rest
+  }
+}
+
+function lineIsOmapasteImageRef(line) {
+  var s = String(line || "").trim()
+  if (!s)
+    return false
+  var decoded = decodedPathFromLine(s)
+  if (decoded.indexOf("omapaste/qml-images/") >= 0 || decoded.indexOf("/omapaste/qml-images/") >= 0)
+    return true
+  if (s.indexOf("omapaste%2Fqml-images") >= 0 || s.indexOf("omapaste%2fqml-images") >= 0)
+    return true
+  if (/^[a-f0-9]{64}\.(png|jpe?g|webp|gif|bmp|tiff)$/i.test(s))
+    return true
+  if (/^[a-f0-9]{64}\.(png|jpe?g|webp|gif|bmp|tiff)$/i.test(decoded))
+    return true
+  if (s.indexOf("file://") === 0)
+    return false
+  if (s.indexOf("://") >= 0)
+    return false
+  return s.indexOf("/omapaste/qml-images/") >= 0
+}
+
+function isOmapasteImageRef(text) {
+  var raw = String(text || "")
+  if (!raw.trim())
+    return false
+  var lines = raw.split(/\r?\n/)
+  var refs = []
+  for (var i = 0; i < lines.length; i++) {
+    var line = String(lines[i] || "").trim()
+    if (!line)
+      continue
+    if (line.toLowerCase() === "copy")
+      continue
+    refs.push(line)
+  }
+  if (!refs.length)
+    return false
+  for (var j = 0; j < refs.length; j++) {
+    if (!lineIsOmapasteImageRef(refs[j]))
+      return false
+  }
+  return true
+}
+
+function pruneOmapasteImageRefClips(history) {
+  var values = Array.isArray(history) ? history : []
+  var out = []
+  for (var i = 0; i < values.length; i++) {
+    var entry = normalizeEntry(values[i])
+    if (!entry)
+      continue
+    if (entry.type === "text" && isOmapasteImageRef(entry.text))
+      continue
+    out.push(entry)
+  }
+  return out
+}
+
 function normalizeEntry(value) {
   if (!value || typeof value !== "object")
     return null
@@ -84,6 +153,8 @@ function normalizeEntry(value) {
   if (type === "text") {
     var text = String(value.text || "")
     if (!text.trim().length)
+      return null
+    if (isOmapasteImageRef(text))
       return null
     var te = {
       type: "text",
@@ -361,4 +432,27 @@ function ageLabel(ts, nowSecs) {
   }
   var days = Math.floor(delta / 86400)
   return days === 1 ? "1 day ago" : days + " days ago"
+}
+
+// GTK parity: src/ui.rs should_reopen_after_drag, card drag prepare gate, clip MIME.
+function shouldReopenAfterDrag(cancelled, panelHidden) {
+  return cancelled && panelHidden
+}
+
+function cardDragPrepareAllowed(kindEditing, blockCardDrag, dragPanelHidden) {
+  return !kindEditing && !blockCardDrag && !dragPanelHidden
+}
+
+function dragMimeData(entryType, fullText, path, fileUrlFn) {
+  if (entryType === "image") {
+    var url = fileUrlFn(path)
+    return {
+      "text/uri-list": url + "\r\n",
+      "image/png": url
+    }
+  }
+  return {
+    "text/plain": fullText,
+    "text/plain;charset=utf-8": fullText
+  }
 }

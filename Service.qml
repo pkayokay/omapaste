@@ -124,7 +124,7 @@ Item {
   function saveHistory() {
     var now = Date.now() / 1000
     var before = root.history
-    var pruned = History.visibleHistory(root.history, now)
+    var pruned = History.pruneOmapasteImageRefClips(History.visibleHistory(root.history, now))
     var capped = pruned.slice(0, root.config.max_items)
     root.unlinkImagePaths(History.imagePathsRemoved(before, capped))
     root.history = capped
@@ -140,7 +140,15 @@ Item {
   }
 
   function addClipboardJson(line) {
-    root.addClipboardEntry(History.parseEntryJson(line))
+    var raw = String(line || "").trim()
+    if (!raw)
+      return
+    if (raw.charAt(0) !== "{") {
+      if (History.isOmapasteImageRef(raw))
+        return
+      return
+    }
+    root.addClipboardEntry(History.parseEntryJson(raw))
   }
 
   function stopWatchers() {

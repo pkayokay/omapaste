@@ -93,7 +93,7 @@ Use **toggle** for Super+Shift+V so the bind opens and closes the bar.
 
 - Runs unsandboxed inside `omarchy-shell`; shells out to `wl-paste` / `wl-copy` / `wtype` / `hyprctl`
 - History stays local under `~/.local/state/omapaste/`
-- Drag-into-apps is not supported; use copy + paste
+- Drag cards into other apps (text and images)
 - Super+Ctrl+V remains Omarchy’s built-in clipboard
 
 ## Marketplace

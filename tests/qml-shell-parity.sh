@@ -56,9 +56,35 @@ if command -v wl-copy >/dev/null && command -v wl-paste >/dev/null; then
   [[ "$got" == "pastehash123" ]] && ok "paste copy-text ignore-hash" || bad "paste ignore-hash content=$got"
   clip=$(wl-paste --type text --no-newline 2>/dev/null || true)
   [[ "$clip" == "paste-check-body" ]] && ok "paste copy-text wl-copy" || bad "clipboard=$clip"
+  [[ -f "$STATE/qml-ignore-until" ]] && ok "paste copy-text ignore-until" || bad "paste missing ignore-until"
 else
   bad "wl-copy/wl-paste missing"
 fi
+
+out=$(printf 'during-ignore-window' | "$ROOT/capture.sh" text || true)
+[[ -z "$out" ]] && ok "ignore-until skips capture" || bad "ignore-until still emitted: $out"
+
+"$ROOT/paste.sh" arm-ignore "" 3
+out=$(printf 'still-ignored' | "$ROOT/capture.sh" text || true)
+[[ -z "$out" ]] && ok "arm-ignore extends window" || bad "arm-ignore still emitted: $out"
+
+omapaste_uri="file://$STATE/qml-images/sample-ref.png"
+out=$(printf '%s' "$omapaste_uri" | "$ROOT/capture.sh" text || true)
+[[ -z "$out" ]] && ok "omapaste file uri skipped" || bad "omapaste uri captured: $out"
+omapaste_path="$STATE/qml-images/sample-ref.png"
+out=$(printf '%s' "$omapaste_path" | "$ROOT/capture.sh" text || true)
+[[ -z "$out" ]] && ok "omapaste image path skipped" || bad "omapaste path captured: $out"
+gnome_clip=$'copy\nfile://'"$omapaste_path"
+out=$(printf '%s' "$gnome_clip" | "$ROOT/capture.sh" text || true)
+[[ -z "$out" ]] && ok "omapaste gnome copy block skipped" || bad "gnome block captured: $out"
+out=$(printf '%s' "$(basename "$omapaste_path")" | "$ROOT/capture.sh" text || true)
+[[ -z "$out" ]] && ok "omapaste hash basename skipped" || bad "hash basename captured: $out"
+enc_uri=$(python3 -c "import urllib.parse; print('file://' + urllib.parse.quote('$omapaste_path', safe=''))")
+out=$(printf '%s' "$enc_uri" | "$ROOT/capture.sh" text || true)
+[[ -z "$out" ]] && ok "encoded file uri skipped" || bad "encoded uri captured: $out"
+rm -f "$STATE/qml-ignore-until" "$STATE/qml-ignore-hash"
+out=$(printf 'file:///tmp/not-omapaste.png' | "$ROOT/capture.sh" text || true)
+[[ -n "$out" ]] && ok "other file uri still captured" || bad "external file uri skipped"
 
 # --- paste.sh copy-image ---
 if [[ -f "$ipath" ]]; then

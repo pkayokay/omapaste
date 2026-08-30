@@ -11,7 +11,7 @@ The `src/`, `Cargo.toml`, `install.sh`, and GTK-oriented tests remain in the tre
 | `history.sqlite` | `qml-history.json` |
 | `config.toml` | `qml-config.json` |
 | `install.sh` / `--hypr` | `omarchy plugin add` + optional hand-edited Hypr bind |
-| Drag cards into apps | Not supported in QML port — copy/paste |
+| Drag cards into apps | Supported in QML plugin (Qt Wayland drag) |
 
 To run the old daemon (not needed for the plugin):
 

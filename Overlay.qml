@@ -27,6 +27,9 @@ Item {
   property var pendingPasteArgv: null
   property int pendingTouchIndex: -1
   property var config: Config.normalize(null)
+  property bool blockCardDrag: false
+  property bool dragPanelHidden: false
+  property int dragHistoryIndex: -1
   readonly property int pasteDelayMs: 160
 
   // GTK parity: src/ui.rs BAR_HEIGHT, CARD_*, SLIDE_PX, ANIM_DURATION.
@@ -35,6 +38,7 @@ Item {
   readonly property int cardHeight: 280
   readonly property int cardHeaderHeight: 48
   readonly property int cardFooterHeight: 36
+  readonly property int cardDragThresholdPx: 24
   readonly property int cardListHeight: cardHeight + 16
   readonly property int sideMargin: 18
   readonly property int visibleMargin: 14
@@ -127,6 +131,11 @@ Item {
     root.kindEditing = false
     root.pendingPasteArgv = null
     root.pendingTouchIndex = -1
+    root.blockCardDrag = false
+    root.dragPanelHidden = false
+    root.dragHistoryIndex = -1
+    if (dragAnchor.armed)
+      dragAnchor.armed = false
     pasteAfterHideTimer.stop()
     root.opened = true
     root.slide = 1.0
@@ -241,7 +250,7 @@ Item {
   function saveHistory() {
     var now = Date.now() / 1000
     var before = root.history
-    var pruned = History.visibleHistory(root.history, now)
+    var pruned = History.pruneOmapasteImageRefClips(History.visibleHistory(root.history, now))
     var capped = pruned.slice(0, root.config.max_items)
     root.unlinkImagePaths(History.imagePathsRemoved(before, capped))
     root.history = capped
@@ -312,18 +321,107 @@ Item {
     return displayModel.get(root.selectedIndex)
   }
 
-  function copySelected(closeAfter, reorder) {
-    var row = root.currentRow()
+  function copyRow(row, reorder, sync) {
     if (!row)
       return
+    var argv
     if (row.entryType === "image")
-      Quickshell.execDetached([root.pasteScript, "copy-image", row.path, row.mime || "image/png", row.hash || ""])
+      argv = [root.pasteScript, "copy-image", row.path, row.mime || "image/png", row.hash || ""]
     else
-      Quickshell.execDetached([root.pasteScript, "copy-text", row.fullText, row.hash || ""])
+      argv = [root.pasteScript, "copy-text", row.fullText, row.hash || ""]
+    if (sync)
+      Util.execArgv(argv)
+    else
+      Quickshell.execDetached(argv)
     if (reorder)
       root.pendingTouchIndex = row.historyIndex
+  }
+
+  function copySelected(closeAfter, reorder) {
+    root.copyRow(root.currentRow(), reorder)
     if (closeAfter)
       root.dismiss()
+  }
+
+  function cardDragAllowed() {
+    return History.cardDragPrepareAllowed(root.kindEditing, root.blockCardDrag, root.dragPanelHidden)
+  }
+
+  function buildDragMime(row) {
+    return History.dragMimeData(row.entryType, row.fullText, row.path, Util.fileUrl)
+  }
+
+  function hideNowForDrag() {
+    root.shortcutsOpen = false
+    root.searchOpen = false
+    root.filterText = ""
+    slideAnim.stop()
+    root.slide = 1.0
+    root.hiding = false
+    root.opened = false
+  }
+
+  function reopenAfterDrag() {
+    root.opened = true
+    root.slide = 1.0
+    root.rebuildDisplay()
+    Qt.callLater(function () {
+      root.animateSlide(0.0, function () {
+        keyCatcher.forceActiveFocus()
+      })
+    })
+  }
+
+  function finishCardDrag(cancelled) {
+    var hidden = root.dragPanelHidden
+    root.dragPanelHidden = false
+    dragAnchor.armed = false
+    if (cancelled && hidden) {
+      root.reopenAfterDrag()
+      return
+    }
+    if (!hidden)
+      return
+    Util.execArgv([root.pasteScript, "arm-ignore", "", "5"])
+    if (root.dragHistoryIndex >= 0) {
+      root.pendingTouchIndex = root.dragHistoryIndex
+      root.dragHistoryIndex = -1
+      root.applyPendingTouch()
+    }
+    if (root.shell && typeof root.shell.hide === "function")
+      root.shell.hide(root.pluginId())
+  }
+
+  function beginCardDrag(index, pressX, pressY, cardItem) {
+    if (dragAnchor.armed || root.dragPanelHidden)
+      return
+    if (!root.cardDragAllowed())
+      return
+    if (index < 0 || index >= displayModel.count)
+      return
+    var row = displayModel.get(index)
+    if (!row)
+      return
+    if (row.entryType === "image" && !row.path)
+      return
+    root.selectedIndex = index
+    Util.execArgv([root.pasteScript, "arm-ignore", row.hash || "", "15"])
+    root.copyRow(row, false, true)
+    root.dragHistoryIndex = row.historyIndex
+    dragAnchor.mimeData = root.buildDragMime(row)
+    var pos = cardItem.mapToItem(dragLayer, 0, 0)
+    dragAnchor.x = pos.x
+    dragAnchor.y = pos.y
+    dragAnchor.width = root.cardWidth
+    dragAnchor.height = root.cardHeight
+    dragAnchor.hotSpotX = pressX
+    dragAnchor.hotSpotY = pressY
+    root.dragPanelHidden = true
+    dragAnchor.armed = true
+    Qt.callLater(function () {
+      if (dragAnchor.armed)
+        root.hideNowForDrag()
+    })
   }
 
   function pasteSelected() {
@@ -489,7 +587,8 @@ Item {
     color: "transparent"
     WlrLayershell.namespace: "omapaste"
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: (root.opened && !root.dragPanelHidden)
+        ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
 
     Keys.onPressed: function (event) {
@@ -773,6 +872,7 @@ Item {
             anchors.fill: parent
             visible: displayModel.count > 0
             orientation: ListView.Horizontal
+            interactive: !dragAnchor.armed
             clip: true
             spacing: 10
             model: displayModel
@@ -942,16 +1042,49 @@ Item {
                 }
               }
 
+              DragHandler {
+                id: cardDragHandler
+                enabled: !card.editingKind
+                target: null
+                property bool committed: false
+                onActiveChanged: {
+                  if (!active)
+                    committed = false
+                }
+                onTranslationChanged: {
+                  if (!active || committed)
+                    return
+                  if (!root.cardDragAllowed())
+                    return
+                  var dist = Math.abs(translation.x) + Math.abs(translation.y)
+                  if (dist < root.cardDragThresholdPx)
+                    return
+                  committed = true
+                  root.beginCardDrag(card.index, centroid.pressPosition.x, centroid.pressPosition.y, card)
+                }
+              }
+
               MouseArea {
                 anchors.fill: parent
                 enabled: !card.editingKind
                 z: -1
+                property bool suppressClick: false
                 onClicked: {
+                  if (cardDragHandler.committed) {
+                    cardDragHandler.committed = false
+                    return
+                  }
+                  var wasEditing = root.kindEditing
                   root.commitKindEditIfNeeded()
+                  if (wasEditing)
+                    root.blockCardDrag = true
                   root.selectedIndex = card.index
                   root.copySelected(false)
                 }
                 onDoubleClicked: root.pasteSelected()
+                onReleased: {
+                  root.blockCardDrag = false
+                }
               }
             }
           }
@@ -993,6 +1126,7 @@ Item {
               { key: "Enter", action: "Paste" },
               { key: "Click", action: "Copy" },
               { key: "Ctrl+C", action: "Copy & close" },
+              { key: "Drag", action: "Drop into apps" },
               { key: "Del", action: "Delete" },
               { key: "Ctrl+K", action: "Keep" },
               { key: "Type", action: "Search" },
@@ -1027,6 +1161,35 @@ Item {
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap
+          }
+        }
+      }
+
+      Item {
+        id: dragLayer
+        anchors.fill: parent
+        z: 200
+
+        Item {
+          id: dragAnchor
+          visible: false
+          property bool armed: false
+          property var mimeData: ({})
+          property real hotSpotX: 0
+          property real hotSpotY: 0
+
+          Drag.active: armed
+          Drag.dragType: Drag.Automatic
+          Drag.supportedActions: Drag.CopyAction
+          Drag.mimeData: mimeData
+          Drag.source: dragAnchor
+          Drag.hotSpot.x: hotSpotX
+          Drag.hotSpot.y: hotSpotY
+
+          Drag.onDragFinished: function (dropAction) {
+            // Wayland often reports IgnoreAction even on a successful drop.
+            // GTK reopens only on drag_cancel, not drag_end — stay closed here.
+            root.finishCardDrag(false)
           }
         }
       }

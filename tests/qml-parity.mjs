@@ -29,7 +29,8 @@ function loadLibrary( file ) {
     "keepByKey,nextKeep,keepUntilFrom,applyDefaultKeep,isExpired," +
     "normalizeEntry,entryKey,parseHistory,addEntry,removeEntryAt,imagePathsRemoved,touchEntryAt," +
     "cycleKeepAt,renameKindAt,parseEntryJson,previewText,keepLabel," +
-    "charLabel,matchesFilter,visibleHistory,displayRows,ageLabel" +
+    "charLabel,matchesFilter,visibleHistory,displayRows,ageLabel," +
+    "shouldReopenAfterDrag,cardDragPrepareAllowed,dragMimeData,isOmapasteImageRef,pruneOmapasteImageRefClips" +
     "};", sandbox )
   return sandbox.__exports
 }
@@ -145,6 +146,37 @@ assert( H.ageLabel( now - 90000, now ) === "1 day ago", "age days" )
 assert( H.ageLabel( now - 11, now ) === "just now", "age just now" )
 assert( H.ageLabel( now - 1, now ) === "just now", "age one second just now" )
 assert( H.ageLabel( now - 60, now ) === "1 minute ago", "age one minute" )
+
+// --- Drag (GTK parity helpers; Wayland drag UI is manual) ---
+assert( H.shouldReopenAfterDrag( true, true ) === true, "drag reopen on cancel" )
+assert( H.shouldReopenAfterDrag( false, true ) === false, "drag stay closed on end" )
+assert( H.shouldReopenAfterDrag( true, false ) === false, "drag reopen needs hidden panel" )
+assert( H.cardDragPrepareAllowed( false, false, false ) === true, "drag prepare allowed" )
+assert( H.cardDragPrepareAllowed( true, false, false ) === false, "drag blocked while editing kind" )
+assert( H.cardDragPrepareAllowed( false, true, false ) === false, "drag blocked after rename click" )
+assert( H.cardDragPrepareAllowed( false, false, true ) === false, "drag blocked while panel hidden" )
+const textMime = H.dragMimeData( "text", "hello drag", "", function ( p ) { return "file://" + p } )
+assert( textMime["text/plain"] === "hello drag", "drag mime text/plain" )
+assert( textMime["text/plain;charset=utf-8"] === "hello drag", "drag mime text charset" )
+const imgMime = H.dragMimeData( "image", "", "/tmp/spaced clip.png", function ( p ) {
+  return "file://" + p.split( "/" ).map( encodeURIComponent ).join( "/" )
+} )
+assert( imgMime["image/png"] === "file:///tmp/spaced%20clip.png", "drag mime image url" )
+assert( imgMime["text/uri-list"] === "file:///tmp/spaced%20clip.png\r\n", "drag mime uri-list" )
+
+assert( H.isOmapasteImageRef( "/home/paulkim/.local/state/omapaste/qml-images/abc.png" ) === true, "omapaste image ref path" )
+assert( H.isOmapasteImageRef( "file:///home/paulkim/.local/state/omapaste/qml-images/abc.png" ) === true, "omapaste image ref uri" )
+assert( H.normalizeEntry( { type: "text", text: "/home/paulkim/.local/state/omapaste/qml-images/abc.png", hash: "x" } ) === null, "normalize rejects omapaste path text" )
+var gnomeUri = "copy\nfile:///home/paulkim/.local/state/omapaste/qml-images/abc.png"
+assert( H.isOmapasteImageRef( gnomeUri ) === true, "omapaste gnome copy block" )
+assert( H.normalizeEntry( { type: "text", text: gnomeUri, hash: "x" } ) === null, "normalize rejects gnome uri block" )
+assert( H.isOmapasteImageRef( "hello\nfile:///home/paulkim/.local/state/omapaste/qml-images/abc.png" ) === false, "mixed text not omapaste ref" )
+assert( H.isOmapasteImageRef( "https://example.com/foo.png" ) === false, "url path not omapaste ref" )
+assert( H.isOmapasteImageRef( "291fe4d0dc9dbd521d385f3bc90ec500d3c8898546ed3e721e1b5e59fa99f7ec.png" ) === true, "omapaste hash basename" )
+assert( H.normalizeEntry( { type: "text", text: "291fe4d0dc9dbd521d385f3bc90ec500d3c8898546ed3e721e1b5e59fa99f7ec.png", hash: "x" } ) === null, "normalize rejects hash basename" )
+var encUri = "file://%2Fhome%2Fpaulkim%2F.local%2Fstate%2Fomapaste%2Fqml-images%2Fabc.png"
+assert( H.isOmapasteImageRef( encUri ) === true, "encoded file uri ref" )
+assert( H.pruneOmapasteImageRefClips( [ { type: "text", text: encUri, hash: "x" }, { type: "text", text: "ok", hash: "y" } ] ).length === 1, "prune encoded uri clip" )
 
 // --- parseHistory ---
 assert( H.parseHistory( "not-json" ).length === 0, "parseHistory bad json" )

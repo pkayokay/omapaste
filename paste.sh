@@ -5,17 +5,29 @@ set -euo pipefail
 
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omapaste"
 IGNORE_FILE="$STATE_DIR/qml-ignore-hash"
+IGNORE_UNTIL_FILE="$STATE_DIR/qml-ignore-until"
 mkdir -p "$STATE_DIR"
 
 mode="${1:-}"
 shift || true
 
 remember_ignore() {
-  local hash="$1"
+  local hash="${1:-}"
+  local seconds="${2:-1.5}"
+  local new_until old
+  new_until=$(python3 -c 'import sys, time; print(time.time() + float(sys.argv[1]))' "$seconds")
+  if [[ -f "$IGNORE_UNTIL_FILE" ]]; then
+    old=$(tr -d ' \n\r' <"$IGNORE_UNTIL_FILE")
+    if [[ -n "$old" ]]; then
+      new_until=$(python3 -c 'import sys; print(max(float(sys.argv[1]), float(sys.argv[2])))' "$old" "$new_until")
+    fi
+  fi
   if [[ -n "$hash" ]]; then
     printf '%s' "$hash" >"$IGNORE_FILE"
     chmod 600 "$IGNORE_FILE" 2>/dev/null || true
   fi
+  printf '%s' "$new_until" >"$IGNORE_UNTIL_FILE"
+  chmod 600 "$IGNORE_UNTIL_FILE" 2>/dev/null || true
 }
 
 focus_address() {
@@ -65,6 +77,11 @@ send_paste() {
 }
 
 case "$mode" in
+arm-ignore)
+  hash="${1:-}"
+  seconds="${2:-1.5}"
+  remember_ignore "$hash" "$seconds"
+  ;;
 copy-text)
   text="${1:-}"
   hash="${2:-}"
@@ -102,7 +119,7 @@ paste-image)
   send_paste "$paste_keys" "$address"
   ;;
 *)
-  echo "Usage: $0 copy-text|paste-text|copy-image|paste-image ..." >&2
+  echo "Usage: $0 arm-ignore|copy-text|paste-text|copy-image|paste-image ..." >&2
   exit 2
   ;;
 esac
