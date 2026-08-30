@@ -61,6 +61,7 @@ omarchy-shell shell summon io.github.pkayokay.omapaste '{}'
 | Ctrl+K | Cycle keep time (1h → 1d → 7d → forever) |
 | Double-click kind label | Rename |
 | Type | Search |
+| Clear (✕) while searching | Clear the search query |
 | `?` | Shortcut list |
 | `↗` | Open the GitHub issue tracker and close |
 | Esc | Close shortcuts, then search, then the bar |

@@ -171,6 +171,18 @@ Item {
     })
   }
 
+  function clearSearchFilter() {
+    if (!root.filterText.length) {
+      root.closeSearch()
+      return
+    }
+    root.setFilter("")
+    Qt.callLater(function () {
+      searchField.forceActiveFocus()
+      searchField.cursorPosition = 0
+    })
+  }
+
   function beginHide(onDone) {
     if (root.hiding)
       return
@@ -742,16 +754,36 @@ Item {
                       root.setFilter(text)
                   }
                   Keys.onPressed: function (event) {
+                    var ctrl = !!(event.modifiers & Qt.ControlModifier)
                     if (event.key === Qt.Key_Escape) {
                       root.closeSearch()
+                      event.accepted = true
+                    } else if (event.key === Qt.Key_Left) {
+                      root.select(-1)
+                      event.accepted = true
+                    } else if (event.key === Qt.Key_Right) {
+                      root.select(1)
+                      event.accepted = true
+                    } else if (event.key === Qt.Key_Home) {
+                      root.selectAbsolute(0)
+                      event.accepted = true
+                    } else if (event.key === Qt.Key_End) {
+                      root.selectAbsolute(displayModel.count - 1)
                       event.accepted = true
                     } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                       root.pasteSelected()
                       event.accepted = true
-                    } else if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_K) {
+                    } else if (ctrl && event.key === Qt.Key_K) {
                       root.cycleKeep()
                       event.accepted = true
+                    } else if (ctrl && event.key >= Qt.Key_1 && event.key <= Qt.Key_9) {
+                      root.pasteIndex(event.key - Qt.Key_1)
+                      event.accepted = true
+                    } else if (event.key === Qt.Key_Delete) {
+                      root.removeSelected()
+                      event.accepted = true
                     }
+                    // Backspace stays in the field to edit the query.
                   }
                 }
               }
@@ -763,32 +795,65 @@ Item {
             spacing: 0
             height: 28
 
-            Rectangle {
-              id: searchOpenBtn
-              visible: !root.searchOpen
+            // Same trailing slot: magnifier opens search; ✕ clears query while searching.
+            Item {
               width: Style.bar.iconSlot
               height: Style.bar.iconSlot
-              color: searchOpenMa.containsMouse ? Util.alpha(root.foreground, 0.08) : "transparent"
-              radius: 0
-              Item {
-                anchors.centerIn: parent
-                width: Style.font.iconLarge
-                height: Style.font.iconLarge
-                OpticalGlyph {
+
+              Rectangle {
+                id: searchOpenBtn
+                anchors.fill: parent
+                visible: !root.searchOpen
+                color: searchOpenMa.containsMouse ? Util.alpha(root.foreground, 0.08) : "transparent"
+                radius: 0
+                Item {
+                  anchors.centerIn: parent
+                  width: Style.font.iconLarge
+                  height: Style.font.iconLarge
+                  OpticalGlyph {
+                    anchors.fill: parent
+                    text: "󰍉"
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.icon
+                    color: Util.alpha(root.foreground, searchOpenMa.containsMouse ? 1 : 0.8)
+                  }
+                }
+                MouseArea {
+                  id: searchOpenMa
                   anchors.fill: parent
-                  text: "󰍉"
-                  fontFamily: root.fontFamily
-                  fontSize: Style.font.icon
-                  color: Util.alpha(root.foreground, searchOpenMa.containsMouse ? 1 : 0.8)
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  z: 1
+                  onClicked: root.openSearch("")
                 }
               }
-              MouseArea {
-                id: searchOpenMa
+
+              Rectangle {
+                id: searchClearBtn
                 anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                z: 1
-                onClicked: root.openSearch("")
+                visible: root.searchOpen && root.filterText.length > 0
+                color: searchClearMa.containsMouse ? Util.alpha(root.foreground, 0.08) : "transparent"
+                radius: 0
+                Item {
+                  anchors.centerIn: parent
+                  width: Style.font.iconLarge
+                  height: Style.font.iconLarge
+                  OpticalGlyph {
+                    anchors.fill: parent
+                    text: "󰅖"
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.icon
+                    color: Util.alpha(root.foreground, searchClearMa.containsMouse ? 1 : 0.8)
+                  }
+                }
+                MouseArea {
+                  id: searchClearMa
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  z: 1
+                  onClicked: root.clearSearchFilter()
+                }
               }
             }
 
