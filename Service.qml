@@ -26,6 +26,7 @@ Item {
     return resolved
   }
   readonly property string captureScript: root.pluginDir + "/capture.sh"
+  readonly property string launcherScript: root.pluginDir + "/install-launcher.sh"
   readonly property string home: Quickshell.env("HOME") || ""
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (home + "/.local/state")
   readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (home + "/.config")
@@ -149,7 +150,20 @@ Item {
       imageWatchProc.running = true
   }
 
-  Component.onCompleted: startWatchersTimer.start()
+  function installLauncher() {
+    if (root.pluginDir === "" || root.launcherScript === "/install-launcher.sh")
+      return
+    if (launcherProc.running)
+      return
+    var esc = root.launcherScript.replace(/'/g, "'\\''")
+    launcherProc.command = ["bash", "-lc", "QUIET=1 exec '" + esc + "'"]
+    launcherProc.running = true
+  }
+
+  Component.onCompleted: {
+    startWatchersTimer.start()
+    installLauncherTimer.start()
+  }
   Component.onDestruction: root.stopWatchers()
 
   Timer {
@@ -157,6 +171,19 @@ Item {
     interval: 200
     repeat: false
     onTriggered: root.startWatchers()
+  }
+
+  Timer {
+    id: installLauncherTimer
+    interval: 300
+    repeat: false
+    onTriggered: root.installLauncher()
+  }
+
+  Process {
+    id: launcherProc
+    running: false
+    command: []
   }
 
   Timer {

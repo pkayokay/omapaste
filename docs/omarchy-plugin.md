@@ -26,6 +26,8 @@ One command — no `./install.sh`, no Rust, no cargo:
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
 ```
 
+That enables the plugin and registers Omapaste in app search (desktop entry + menu route) on first load. To reinstall launcher files manually: `./install-launcher.sh`.
+
 Summon to confirm:
 
 ```bash
