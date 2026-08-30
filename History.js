@@ -285,7 +285,7 @@ function charLabel(entry) {
   var n = entry.chars !== undefined ? Number(entry.chars) : String(entry.text || "").length
   if (isNaN(n))
     n = 0
-  return n + "c"
+  return n === 1 ? "1 character" : n + " characters"
 }
 
 function matchesFilter(entry, filter) {
@@ -347,11 +347,18 @@ function ageLabel(ts, nowSecs) {
   if (!t || !now || now < t)
     return ""
   var delta = Math.max(0, Math.floor(now - t))
+  if (delta < 12)
+    return "just now"
   if (delta < 60)
-    return delta + "s"
-  if (delta < 3600)
-    return Math.floor(delta / 60) + "m"
-  if (delta < 86400)
-    return Math.floor(delta / 3600) + "h"
-  return Math.floor(delta / 86400) + "d"
+    return delta === 1 ? "1 second ago" : delta + " seconds ago"
+  if (delta < 3600) {
+    var minutes = Math.floor(delta / 60)
+    return minutes === 1 ? "1 minute ago" : minutes + " minutes ago"
+  }
+  if (delta < 86400) {
+    var hours = Math.floor(delta / 3600)
+    return hours === 1 ? "1 hour ago" : hours + " hours ago"
+  }
+  var days = Math.floor(delta / 86400)
+  return days === 1 ? "1 day ago" : days + " days ago"
 }

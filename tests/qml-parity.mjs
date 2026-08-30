@@ -72,7 +72,7 @@ assert( hist[0].keep === "7d", "new clip uses config default_keep=7d" )
 assert( typeof hist[0].keep_until === "number" && hist[0].keep_until > now, "7d keep_until in future" )
 
 assert( hist[0].chars === 5, "char count" )
-assert( H.charLabel( hist[0] ) === "5c", "charLabel" )
+assert( H.charLabel( hist[0] ) === "5 characters", "charLabel" )
 
 hist = H.addEntry( hist, { type: "text", text: "alpha", hash: "h1", ts: now }, 10, "7d" )
 assert( hist.length === 1, "dedupe by hash" )
@@ -138,10 +138,13 @@ assert( img && img.kind === "Image" && img.chars === 0, "image normalize" )
 assert( H.previewText( img ) === "Image", "image preview" )
 
 // --- Age ---
-assert( H.ageLabel( now - 30, now ) === "30s", "age seconds" )
-assert( H.ageLabel( now - 120, now ) === "2m", "age minutes" )
-assert( H.ageLabel( now - 7200, now ) === "2h", "age hours" )
-assert( H.ageLabel( now - 90000, now ) === "1d", "age days" )
+assert( H.ageLabel( now - 30, now ) === "30 seconds ago", "age seconds" )
+assert( H.ageLabel( now - 120, now ) === "2 minutes ago", "age minutes" )
+assert( H.ageLabel( now - 7200, now ) === "2 hours ago", "age hours" )
+assert( H.ageLabel( now - 90000, now ) === "1 day ago", "age days" )
+assert( H.ageLabel( now - 11, now ) === "just now", "age just now" )
+assert( H.ageLabel( now - 1, now ) === "just now", "age one second just now" )
+assert( H.ageLabel( now - 60, now ) === "1 minute ago", "age one minute" )
 
 // --- parseHistory ---
 assert( H.parseHistory( "not-json" ).length === 0, "parseHistory bad json" )

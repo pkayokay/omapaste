@@ -33,6 +33,8 @@ Item {
   readonly property int barHeight: 356
   readonly property int cardWidth: 210
   readonly property int cardHeight: 280
+  readonly property int cardHeaderHeight: 48
+  readonly property int cardFooterHeight: 36
   readonly property int cardListHeight: cardHeight + 16
   readonly property int sideMargin: 18
   readonly property int visibleMargin: 14
@@ -287,7 +289,10 @@ Item {
     if (displayModel.count === 0)
       return
     root.commitKindEditIfNeeded()
-    root.selectedIndex = (root.selectedIndex + delta + displayModel.count) % displayModel.count
+    var next = root.selectedIndex + delta
+    if (next < 0 || next >= displayModel.count)
+      return
+    root.selectedIndex = next
     cardList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
     root.copySelected(false)
   }
@@ -803,7 +808,7 @@ Item {
 
                 Rectangle {
                   width: parent.width
-                  height: 44
+                  height: root.cardHeaderHeight
                   color: card.selected ? root.selectedHeaderBackground : root.cardHeaderBackground
                   border.color: Util.alpha(root.foreground, 0.12)
                   border.width: 0
@@ -820,7 +825,7 @@ Item {
                     anchors.leftMargin: 12
                     anchors.rightMargin: 12
                     anchors.topMargin: 8
-                    anchors.bottomMargin: 8
+                    anchors.bottomMargin: 12
                     spacing: 2
 
                     Text {
@@ -877,7 +882,7 @@ Item {
 
                 Item {
                   width: parent.width
-                  height: parent.height - 44 - 36
+                  height: parent.height - root.cardHeaderHeight - root.cardFooterHeight
 
                   Image {
                     id: previewImage
@@ -924,7 +929,7 @@ Item {
 
                 Rectangle {
                   width: parent.width
-                  height: 36
+                  height: root.cardFooterHeight
                   color: "transparent"
 
                   Text {
