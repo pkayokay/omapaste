@@ -1,36 +1,28 @@
-# README screenshot
+# README / marketplace screenshot
 
-How to retake `share/screenshot.png` for the README.
+How to retake `share/screenshot.png` and root `preview.png` (keep them identical).
 
-The shot is a fullscreen desktop: one terminal showing the backdrop text, Omapaste along the bottom, first seed card selected, search and shortcuts closed.
+The shot is a fullscreen desktop: one terminal showing the backdrop text, Omapaste along the bottom, first card selected, search and shortcuts closed.
 
-Do not print `README.md` as the backdrop. It now embeds this screenshot, so it no longer matches. Use `share/screenshot-backdrop.md` — that is the terminal text from the original shot.
+Do not print `README.md` as the backdrop. It embeds this screenshot, so it no longer matches. Use `share/screenshot-backdrop.md`.
 
-Theme, terminal, font, prompt, and clock will not match the committed PNG. That is fine. The bar follows the current Omarchy theme from `colors.toml`. What should match is the seed cards, the backdrop file, and the layout (terminal above, bar below, first card selected).
+Theme, terminal, font, prompt, and clock will not match a prior PNG. That is fine. The bar follows the current Omarchy theme. What should match is the seed cards, the backdrop file, and the layout (terminal above, bar below, first card selected).
 
-## Seeds
+## Seeds (QML)
 
-The bar in the shot is a fresh seed, not live history. Clips come from `SEED_CLIPS` in `src/store.rs`. Seed only runs when the sqlite file is missing:
+The bar in the shot is a fresh seed, not live history. Clips come from `seedClips` / `seedImagePaths` in `Service.qml`. Seed only runs when `qml-history.json` is missing:
 
 ```bash
-omapaste quit
-rm -f ~/.local/share/omapaste/history.sqlite
-omapaste daemon
+# Dev plugin checkout (this repo):
+rm -f ~/.local/state/omapaste/qml-history.json
+# optional: clear sample image blobs too
+rm -rf ~/.local/state/omapaste/qml-images
+omarchy restart shell
 ```
 
-Do not copy anything else before the shot. After toggle, you should see **History · 7 clips** in this order:
+Do not copy anything else before the shot. After summon you should see **History** with 7 clips (5 text seeds + 2 sample PNGs). Newest first: sample images, then the text tips/links/code.
 
-| Preview | Keep |
-| --- | --- |
-| `fn greet(name: &str)` / `-> String {` / `format!("hi {name}")` | 7d |
-| `← → select a clip.` / `Enter pastes it.` / `Esc closes the bar.` | forever |
-| `https://omarchy.org` | 7d |
-| `omarchy theme list` | 7d |
-| `ssh git@github.com` | 7d |
-| `Type to search.` / `Ctrl+K cycles keep` / `time.` | forever |
-| `https://github.com/pkayokay/omapaste/issues` | forever |
-
-Clip ages (just now vs 8m ago) do not need to match.
+Clip ages (just now vs minutes ago) do not need to match.
 
 ## Backdrop
 
@@ -45,7 +37,13 @@ bat --style=plain --paging=never -l markdown share/screenshot-backdrop.md
 
 ## Capture
 
-Toggle the bar (`omapaste toggle`, or Super+Shift+V if `./install.sh --hypr` bound it). Leave the first card selected.
+Summon the bar:
+
+```bash
+omarchy-shell shell summon io.github.pkayokay.omapaste '{}'
+```
+
+Leave the first card selected. Search closed (no bordered field visible — default idle chrome).
 
 On Omarchy, Print or:
 
@@ -53,4 +51,11 @@ On Omarchy, Print or:
 omarchy capture screenshot fullscreen save
 ```
 
-Copy the saved PNG over `share/screenshot.png`. Any fullscreen capture that includes the bar and the terminal is fine.
+Copy the saved PNG over both:
+
+```bash
+cp /path/to/saved.png share/screenshot.png
+cp /path/to/saved.png preview.png
+```
+
+Any fullscreen capture that includes the QML bar and the terminal is fine. Do not ship the legacy GTK daemon look.

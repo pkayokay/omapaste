@@ -2,15 +2,14 @@
 
 Clipboard history for [Omarchy](https://omarchy.org). Inspired by [Paste](https://pasteapp.io) for Mac.
 
-Omapaste is a **Rust** GTK4 app. It sits in the background, remembers what you copy, and pops a card strip up from the **bottom of the screen** so you can grab an older clip without losing the current one.
+Omapaste is an **Omarchy Quattro plugin**. It watches the Wayland clipboard, stores history as JSON, and summons a bottom card strip so you can grab an older clip without losing the current one. No separate daemon — install is one `omarchy plugin add` command.
 
 MIT licensed. Source and issue tracker: https://github.com/pkayokay/omapaste
 
 ## What it does
 
-- Watches the Wayland clipboard (`wl-paste`) for text and PNG images
-- Stores history locally in SQLite (`~/.local/share/omapaste/history.sqlite`)
-- Toggles a GTK4 layer-shell bar anchored to the bottom of the screen
-- Header shows **History** plus a search icon (type or click to expand search) and a keyboard-shortcuts popover
-- Cards are a visual timeline, most recently used first: kind, age, preview, character count
-- **Selecting** a card copies it back to the clipboard
+- Watches the Wayland clipboard (`wl-paste`) for text and common image types (PNG, JPEG, WebP, …)
+- Stores history locally under `~/.local/state/omapaste/`
+- Bottom layer-shell bar: kind, age, keep, preview, character count
+- Select to copy; Enter pastes into the window that was focused before the bar opened
+- Drag cards into other apps; search, rename, and per-clip keep times
