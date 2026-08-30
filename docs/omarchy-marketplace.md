@@ -12,7 +12,7 @@ Optional catalog metadata on [omarchyplugins.com](https://omarchyplugins.com/). 
 | Marketplace repo | [HANCORE-linux/omarchy-plugin-marketplace](https://github.com/HANCORE-linux/omarchy-plugin-marketplace) |
 | Listing issue | [#2893](https://github.com/HANCORE-linux/omarchy-plugin-marketplace/issues/2893) (closed) |
 | Catalog page | [omarchyplugins.com](https://omarchyplugins.com/plugin.html?id=io.github.pkayokay.omapaste) |
-| Approved snapshot | `3a0f91363022ba20e3e2677a58e4e61e7c441758` (v0.2.1); pending v0.3.0 [#3672](https://github.com/omacom/omarchy-plugin-marketplace/issues/3672) (`6285932e1fb7a0c2fe548e0ca37814bd92cc5188`) |
+| Approved snapshot | `3a0f91363022ba20e3e2677a58e4e61e7c441758` (v0.2.1); pending v0.3.0 [#3672](https://github.com/omacom/omarchy-plugin-marketplace/issues/3672); standard install [#3681](https://github.com/omacom/omarchy-plugin-marketplace/issues/3681) (`9e3f5a3a43abd1a0d925d8aabb7455d50bc3129a`) |
 
 Update the **Approved snapshot** line in this file after each successful catalog promotion.
 
