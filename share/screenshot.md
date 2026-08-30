@@ -10,11 +10,13 @@ Theme, terminal, font, prompt, and clock will not match a prior PNG. That is fin
 
 ## Seeds (QML)
 
-The bar in the shot is a fresh seed, not live history. Clips come from `seedClips` / `seedImagePaths` in `Service.qml`. Seed only runs when `qml-history.json` is missing:
+The bar in the shot is a fresh seed, not live history. Clips come from `seedClips` / `seedImagePaths` in `Service.qml`. Seed only runs when the SQLite DB has no rows:
 
 ```bash
 # Dev plugin checkout (this repo):
-rm -f ~/.local/state/omapaste/qml-history.json
+rm -f ~/.local/state/omapaste/history.sqlite \
+      ~/.local/state/omapaste/history.sqlite.stamp \
+      ~/.local/state/omapaste/qml-history.stage.json
 # optional: clear sample image blobs too
 rm -rf ~/.local/state/omapaste/qml-images
 omarchy restart shell

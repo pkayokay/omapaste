@@ -4,7 +4,8 @@
 
 - Quattro-native rewrite: clipboard watch + bottom bar in QML (no Rust daemon)
 - One-command install: `omarchy plugin add … --enable` (no `./install.sh`)
-- JSON history under `~/.local/state/omapaste/`; config `~/.config/omapaste/qml-config.json`
+- Default `max_items` raised to 300
+- SQLite history at `~/.local/state/omapaste/history.sqlite` (migrates old `qml-history.json`); config `~/.config/omapaste/qml-config.json`
 - GTK feature parity: search, keep cycle, rename, Enter paste, shortcuts, image seeds, secret skip
 - Search: bordered field, clear (✕) in the magnifier slot, arrow selection while filtering
 - Drag cards into other apps (Qt Wayland drag; panel unmaps on drag)

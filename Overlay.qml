@@ -112,13 +112,18 @@ Item {
     return resolved
   }
   readonly property string pasteScript: root.pluginDir + "/paste.sh"
+  readonly property string historyScript: root.pluginDir + "/history.py"
   readonly property string home: Quickshell.env("HOME") || ""
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (home + "/.local/state")
   readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (home + "/.config")
-  readonly property string historyPath: stateHome + "/omapaste/qml-history.json"
+  readonly property string historyDbPath: stateHome + "/omapaste/history.sqlite"
+  readonly property string historyStagePath: stateHome + "/omapaste/qml-history.stage.json"
+  readonly property string historyStampPath: stateHome + "/omapaste/history.sqlite.stamp"
   readonly property string configPath: configHome + "/omapaste/qml-config.json"
   readonly property string imageDir: stateHome + "/omapaste/qml-images"
   readonly property string issuesUrl: "https://github.com/pkayokay/omapaste/issues"
+  property bool historyListQueued: false
+  property bool historySaveQueued: false
 
   function pluginId() {
     return (root.manifest && root.manifest.id) || "io.github.pkayokay.omapaste"
@@ -138,6 +143,7 @@ Item {
     if (dragAnchor.armed)
       dragAnchor.armed = false
     pasteAfterHideTimer.stop()
+    root.reloadHistory()
     root.opened = true
     root.slide = 1.0
     root.rebuildDisplay()
@@ -178,9 +184,10 @@ Item {
       return
     }
     root.setFilter("")
+    // ✕ click steals focus; put it back so ← → keep selecting clips.
     Qt.callLater(function () {
-      searchField.forceActiveFocus()
-      searchField.cursorPosition = 0
+      if (root.searchOpen)
+        searchField.forceActiveFocus()
     })
   }
 
@@ -248,9 +255,18 @@ Item {
     Quickshell.execDetached(["rm", "-f"].concat(safe))
   }
 
-  function persistHistoryFile(text) {
-    historyFile.setText(text)
-    Quickshell.execDetached(["chmod", "600", root.historyPath])
+  function persistHistoryDb(text) {
+    historyStageFile.setText(text)
+    root.historySaveQueued = true
+    historySaveTimer.restart()
+  }
+
+  function flushHistoryDb() {
+    if (!root.historySaveQueued)
+      return
+    root.historySaveQueued = false
+    Quickshell.execDetached(["chmod", "600", root.historyStagePath])
+    Quickshell.execDetached([root.historyScript, "save", root.historyDbPath, root.historyStagePath])
   }
 
   function toggle() {
@@ -266,6 +282,17 @@ Item {
       root.rebuildDisplay()
   }
 
+  function reloadHistory() {
+    if (root.historyScript === "/history.py" || root.historyDbPath === "")
+      return
+    if (historyListProc.running) {
+      root.historyListQueued = true
+      return
+    }
+    historyListProc.command = [root.historyScript, "list", root.historyDbPath]
+    historyListProc.running = true
+  }
+
   function saveHistory() {
     var now = Date.now() / 1000
     var before = root.history
@@ -273,7 +300,7 @@ Item {
     var capped = pruned.slice(0, root.config.max_items)
     root.unlinkImagePaths(History.imagePathsRemoved(before, capped))
     root.history = capped
-    root.persistHistoryFile(JSON.stringify(capped, null, 2) + "\n")
+    root.persistHistoryDb(JSON.stringify(capped, null, 2) + "\n")
   }
 
   function rebuildDisplay() {
@@ -554,14 +581,38 @@ Item {
   }
 
   FileView {
-    id: historyFile
-    path: root.historyPath
+    id: historyStageFile
+    path: root.historyStagePath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+  }
+
+  FileView {
+    id: historyStampFile
+    path: root.historyStampPath
     watchChanges: true
     atomicWrites: true
     printErrors: false
-    onLoaded: root.loadHistory(text())
-    onLoadFailed: root.loadHistory("[]")
+    onLoaded: root.reloadHistory()
+    onLoadFailed: root.reloadHistory()
     onFileChanged: reload()
+  }
+
+  Process {
+    id: historyListProc
+    running: false
+    command: []
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.loadHistory(text)
+    }
+    onExited: {
+      if (root.historyListQueued) {
+        root.historyListQueued = false
+        root.reloadHistory()
+      }
+    }
   }
 
   Process {
@@ -579,6 +630,13 @@ Item {
         }
       }
     }
+  }
+
+  Timer {
+    id: historySaveTimer
+    interval: 40
+    repeat: false
+    onTriggered: root.flushHistoryDb()
   }
 
   Timer {
@@ -765,6 +823,8 @@ Item {
                     clip: true
                     selectByMouse: true
                     verticalAlignment: TextInput.AlignVCenter
+                    // Navigation keys must win over TextInput cursor moves (especially when empty).
+                    Keys.priority: Keys.BeforeItem
                     onTextChanged: {
                       if (text !== root.filterText)
                         root.setFilter(text)

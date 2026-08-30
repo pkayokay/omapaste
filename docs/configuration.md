@@ -7,7 +7,7 @@ Optional settings at `~/.config/omapaste/qml-config.json`. If missing, defaults 
 ```json
 {
   "default_keep": "1d",
-  "max_items": 200,
+  "max_items": 300,
   "paste_keys": "auto",
   "ignore_secrets": true
 }
@@ -35,11 +35,11 @@ Without a bind: `omarchy-shell shell summon io.github.pkayokay.omapaste '{}'`.
 | Path | What |
 | --- | --- |
 | `~/.config/omapaste/qml-config.json` | Settings above |
-| `~/.local/state/omapaste/qml-history.json` | Clip history |
+| `~/.local/state/omapaste/history.sqlite` | Clip history (SQLite; auto-migrates old `qml-history.json`) |
 | `~/.local/state/omapaste/qml-images/` | PNG payloads |
 | `~/.local/state/omapaste/qml-ignore-hash` | Ephemeral hash so self-copies are not re-ingested |
 
-To reset sample tips: disable the plugin, delete `qml-history.json`, enable again (seeds only when the history file is empty / missing).
+To reset sample tips: disable the plugin, delete `history.sqlite` (and the `.stamp` / stage files if present), enable again (seeds only when the DB has no rows).
 
 ## Legacy GTK paths
 

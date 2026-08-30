@@ -9,7 +9,7 @@ var KEEP_PRESETS = [
 ]
 
 var DEFAULT_KEEP = "1d"
-var DEFAULT_MAX_ITEMS = 200
+var DEFAULT_MAX_ITEMS = 300
 
 function keepByKey(key) {
   var k = String(key || "")

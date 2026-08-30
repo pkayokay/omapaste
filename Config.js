@@ -5,7 +5,7 @@
 
 var DEFAULTS = {
   default_keep: "1d",
-  max_items: 200,
+  max_items: 300,
   max_bytes: 8000000,
   paste_keys: "auto",
   ignore_secrets: true

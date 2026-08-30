@@ -146,6 +146,22 @@ rm -f "$STATE/qml-ignore-until" "$STATE/qml-ignore-hash"
 out=$(CLIPBOARD_STATE=sensitive PATH="$STUB:$PATH" XDG_CONFIG_HOME="$TMP/empty-config" XDG_STATE_HOME="$XDG_STATE_HOME" "$ROOT/capture.sh" 2>/dev/null || true)
 [[ -z "$out" ]] && ok "CLIPBOARD_STATE=sensitive skipped" || bad "sensitive emitted"
 
+# --- history.py SQLite list/save/migrate ---
+HDB="$STATE/history.sqlite"
+rm -f "$HDB" "$HDB.stamp" "$STATE/qml-history.json" "$STATE/qml-history.json.migrated"
+payload='[{"type":"text","text":"hello-sqlite","hash":"h1","ts":1,"kind":"Text","keep":"1d","keep_until":null}]'
+printf '%s\n' "$payload" >"$STATE/qml-history.stage.json"
+"$ROOT/history.py" save "$HDB" "$STATE/qml-history.stage.json"
+listed=$("$ROOT/history.py" list "$HDB")
+echo "$listed" | jq -e '.[0].text == "hello-sqlite"' >/dev/null && ok "history.py save+list" || bad "history list: $listed"
+[[ -f "$HDB.stamp" ]] && ok "history.py stamp" || bad "missing stamp"
+# migrate from legacy JSON when DB empty
+rm -f "$HDB" "$HDB.stamp"
+printf '%s\n' '[{"type":"text","text":"from-json","hash":"hj","ts":2,"kind":"Text","keep":"forever","keep_until":null}]' >"$STATE/qml-history.json"
+migrated=$("$ROOT/history.py" list "$HDB")
+echo "$migrated" | jq -e '.[0].text == "from-json"' >/dev/null && ok "history.py migrates json" || bad "migrate: $migrated"
+[[ -f "$STATE/qml-history.json.migrated" ]] && ok "legacy json renamed" || bad "json not renamed"
+
 echo
 echo "shell parity: $PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]

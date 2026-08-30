@@ -56,7 +56,7 @@ assert( C.normalize( null ).max_bytes === 8000000, "config max_bytes default" )
 assert( C.normalize( { max_bytes: 1024 } ).max_bytes === 1024, "config max_bytes override" )
 assert( C.normalize( { default_keep: "7d", max_items: 50, paste_keys: "ctrl-v" } ).paste_keys === "ctrl-v", "config paste_keys" )
 assert( C.normalize( { default_keep: "nope" } ).default_keep === "1d", "config rejects bad keep" )
-assert( C.parse( "{ bad" ).max_items === 200, "config parse fallback" )
+assert( C.parse( "{ bad" ).max_items === 300, "config parse fallback" )
 
 // --- Keep cycle ---
 assert( H.nextKeep( "1h" ).key === "1d", "keep 1h→1d" )

@@ -7,7 +7,7 @@ Development contract for omapaste.
 ## QML daily loop
 
 ```bash
-# edit Service.qml Overlay.qml History.js Config.js capture.sh paste.sh
+# edit Service.qml Overlay.qml History.js Config.js capture.sh paste.sh history.py
 omarchy plugin validate "$(pwd)"
 # after .pragma library JS changes:
 omarchy restart shell
@@ -42,6 +42,7 @@ Do **not** run `omapaste toggle` / `show` / `hide` from tests against a live dae
 | Bar layout, keys, search, cards, drag | `Overlay.qml` |
 | Clipboard watch / history write | `Service.qml` |
 | History helpers (keep, filter, rename, drag/MIME guards) | `History.js` |
+| History SQLite list/save | `history.py` |
 | Config defaults / parse | `Config.js` |
 | Capture from clipboard | `capture.sh` |
 | Paste / copy / focus / ignore window | `paste.sh` |
@@ -52,7 +53,7 @@ Do **not** run `omapaste toggle` / `show` / `hide` from tests against a live dae
 | Path | What |
 | --- | --- |
 | `~/.config/omapaste/qml-config.json` | Keep default, caps, paste keys, secret skip |
-| `~/.local/state/omapaste/qml-history.json` | Clip history |
+| `~/.local/state/omapaste/history.sqlite` | Clip history (SQLite) |
 | `~/.local/state/omapaste/qml-images/` | Image payloads |
 | `~/.config/hypr/bindings.lua` | Optional Super+Shift+V |
 

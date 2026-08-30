@@ -26,14 +26,19 @@ Item {
     return resolved
   }
   readonly property string captureScript: root.pluginDir + "/capture.sh"
+  readonly property string historyScript: root.pluginDir + "/history.py"
   readonly property string launcherScript: root.pluginDir + "/install-launcher.sh"
   readonly property string home: Quickshell.env("HOME") || ""
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (home + "/.local/state")
   readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (home + "/.config")
-  readonly property string historyPath: stateHome + "/omapaste/qml-history.json"
+  readonly property string historyDbPath: stateHome + "/omapaste/history.sqlite"
+  readonly property string historyStagePath: stateHome + "/omapaste/qml-history.stage.json"
+  readonly property string historyStampPath: stateHome + "/omapaste/history.sqlite.stamp"
   readonly property string configPath: configHome + "/omapaste/qml-config.json"
   readonly property string imageDir: stateHome + "/omapaste/qml-images"
   property var history: []
+  property bool historyListQueued: false
+  property bool historySaveQueued: false
 
   // Text samples aligned with src/store.rs SEED_CLIPS (text only in GTK seed).
   readonly property var seedClips: [
@@ -88,6 +93,17 @@ Item {
       root.seedIfEmpty()
   }
 
+  function reloadHistory() {
+    if (root.historyScript === "/history.py" || root.historyDbPath === "")
+      return
+    if (historyListProc.running) {
+      root.historyListQueued = true
+      return
+    }
+    historyListProc.command = [root.historyScript, "list", root.historyDbPath]
+    historyListProc.running = true
+  }
+
   function seedIfEmpty() {
     if (root.history.length > 0)
       return
@@ -123,9 +139,18 @@ Item {
     Quickshell.execDetached(["rm", "-f"].concat(safe))
   }
 
-  function persistHistoryFile(text) {
-    historyFile.setText(text)
-    Quickshell.execDetached(["chmod", "600", root.historyPath])
+  function persistHistoryDb(text) {
+    historyStageFile.setText(text)
+    root.historySaveQueued = true
+    historySaveTimer.restart()
+  }
+
+  function flushHistoryDb() {
+    if (!root.historySaveQueued)
+      return
+    root.historySaveQueued = false
+    Quickshell.execDetached(["chmod", "600", root.historyStagePath])
+    Quickshell.execDetached([root.historyScript, "save", root.historyDbPath, root.historyStagePath])
   }
 
   function saveHistory() {
@@ -135,7 +160,7 @@ Item {
     var capped = pruned.slice(0, root.config.max_items)
     root.unlinkImagePaths(History.imagePathsRemoved(before, capped))
     root.history = capped
-    root.persistHistoryFile(JSON.stringify(capped, null, 2) + "\n")
+    root.persistHistoryDb(JSON.stringify(capped, null, 2) + "\n")
   }
 
   function addClipboardEntry(entry) {
@@ -184,10 +209,18 @@ Item {
   }
 
   Component.onCompleted: {
+    root.reloadHistory()
     startWatchersTimer.start()
     installLauncherTimer.start()
   }
   Component.onDestruction: root.stopWatchers()
+
+  Timer {
+    id: historySaveTimer
+    interval: 40
+    repeat: false
+    onTriggered: root.flushHistoryDb()
+  }
 
   Timer {
     id: startWatchersTimer
@@ -231,14 +264,39 @@ Item {
   }
 
   FileView {
-    id: historyFile
-    path: root.historyPath
+    id: historyStageFile
+    path: root.historyStagePath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+  }
+
+  // Stamp bumps when history.py save completes so Service/Overlay stay aligned.
+  FileView {
+    id: historyStampFile
+    path: root.historyStampPath
     watchChanges: true
     atomicWrites: true
     printErrors: false
-    onLoaded: root.loadHistory(text())
-    onLoadFailed: root.loadHistory("[]")
+    onLoaded: root.reloadHistory()
+    onLoadFailed: root.reloadHistory()
     onFileChanged: reload()
+  }
+
+  Process {
+    id: historyListProc
+    running: false
+    command: []
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.loadHistory(text)
+    }
+    onExited: {
+      if (root.historyListQueued) {
+        root.historyListQueued = false
+        root.reloadHistory()
+      }
+    }
   }
 
   Process {

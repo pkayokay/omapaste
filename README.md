@@ -9,7 +9,7 @@ Omapaste is an **Omarchy Quattro plugin**: a bottom card timeline for clipboard 
 ## What it does
 
 - Watches the Wayland clipboard (`wl-paste`) for text and common image types (PNG, JPEG, WebP, …)
-- Stores history locally as JSON under `~/.local/state/omapaste/`
+- Stores history locally in SQLite under `~/.local/state/omapaste/`
 - Bottom layer-shell card strip (most recent first): kind, age, keep, preview, character count
 - **Selecting** a card copies it; **Enter** (or double-click) pastes into the window that was focused before the bar opened
 - **Drag** a card into another app (text or images; terminals and text fields get a path/URI)

@@ -32,7 +32,7 @@ After `History.js` / `Config.js` edits: always `omarchy restart shell`.
 | Watch text clipboard | yes | yes | live + shell |
 | Watch PNG images | yes | yes | live + shell (CRC-validated) |
 | Skip secrets / sensitive | yes | yes | shell |
-| Persist history | sqlite | JSON | live |
+| Persist history | sqlite | sqlite | live |
 | Bottom card bar | yes | yes | live |
 | Select → copy | yes | yes | paste.sh + live |
 | Ignore-hash / ignore-until | yes | yes | shell |
