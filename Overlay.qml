@@ -939,7 +939,11 @@ Item {
                       elide: Text.ElideRight
                       MouseArea {
                         anchors.fill: parent
-                        enabled: card.selected
+                        enabled: card.selected && !card.editingKind
+                        // Let the card MouseArea own single-clicks; only steal doubles for rename.
+                        propagateComposedEvents: true
+                        onPressed: function (mouse) { mouse.accepted = false }
+                        onClicked: function (mouse) { mouse.accepted = false }
                         onDoubleClicked: root.beginKindEdit()
                       }
                     }
@@ -1042,36 +1046,43 @@ Item {
                 }
               }
 
-              DragHandler {
-                id: cardDragHandler
+              // One MouseArea owns click + drag threshold. DragHandler fought TextInput
+              // focus (search / rename) and ate subsequent card clicks.
+              MouseArea {
+                id: cardPointer
+                anchors.fill: parent
                 enabled: !card.editingKind
-                target: null
-                property bool committed: false
-                onActiveChanged: {
-                  if (!active)
-                    committed = false
+                z: 10
+                hoverEnabled: false
+                preventStealing: true
+                property real pressX: 0
+                property real pressY: 0
+                property bool dragStarted: false
+                property bool suppressClick: false
+
+                onPressed: function (mouse) {
+                  pressX = mouse.x
+                  pressY = mouse.y
+                  dragStarted = false
+                  suppressClick = false
                 }
-                onTranslationChanged: {
-                  if (!active || committed)
+
+                onPositionChanged: function (mouse) {
+                  if (dragStarted || !(mouse.buttons & Qt.LeftButton))
                     return
                   if (!root.cardDragAllowed())
                     return
-                  var dist = Math.abs(translation.x) + Math.abs(translation.y)
+                  var dist = Math.abs(mouse.x - pressX) + Math.abs(mouse.y - pressY)
                   if (dist < root.cardDragThresholdPx)
                     return
-                  committed = true
-                  root.beginCardDrag(card.index, centroid.pressPosition.x, centroid.pressPosition.y, card)
+                  dragStarted = true
+                  suppressClick = true
+                  root.beginCardDrag(card.index, pressX, pressY, card)
                 }
-              }
 
-              MouseArea {
-                anchors.fill: parent
-                enabled: !card.editingKind
-                z: -1
-                property bool suppressClick: false
                 onClicked: {
-                  if (cardDragHandler.committed) {
-                    cardDragHandler.committed = false
+                  if (suppressClick) {
+                    suppressClick = false
                     return
                   }
                   var wasEditing = root.kindEditing
@@ -1080,9 +1091,21 @@ Item {
                     root.blockCardDrag = true
                   root.selectedIndex = card.index
                   root.copySelected(false)
+                  // Leave search/rename TextInput so later clicks and keys hit the bar.
+                  if (!root.kindEditing)
+                    root.restoreBarKeyFocus()
                 }
+
                 onDoubleClicked: root.pasteSelected()
+
                 onReleased: {
+                  root.blockCardDrag = false
+                  dragStarted = false
+                }
+
+                onCanceled: {
+                  dragStarted = false
+                  suppressClick = false
                   root.blockCardDrag = false
                 }
               }
