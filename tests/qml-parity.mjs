@@ -30,7 +30,9 @@ function loadLibrary( file ) {
     "normalizeEntry,entryKey,parseHistory,addEntry,removeEntryAt,imagePathsRemoved,touchEntryAt," +
     "cycleKeepAt,renameKindAt,parseEntryJson,previewText,keepLabel," +
     "charLabel,matchesFilter,visibleHistory,displayRows,ageLabel," +
-    "shouldReopenAfterDrag,cardDragPrepareAllowed,dragMimeData,isOmapasteImageRef,pruneOmapasteImageRefClips" +
+    "shouldReopenAfterDrag,cardDragPrepareAllowed,dragMimeData,isOmapasteImageRef,pruneOmapasteImageRefClips," +
+    "cardPointerPressState,cardPointerMoveDecision,shouldSelectOnCardClick," +
+    "shouldRestoreBarKeyFocusAfterCardSelect,shouldBlockCardDragAfterKindCommit" +
     "};", sandbox )
   return sandbox.__exports
 }
@@ -155,6 +157,19 @@ assert( H.cardDragPrepareAllowed( false, false, false ) === true, "drag prepare 
 assert( H.cardDragPrepareAllowed( true, false, false ) === false, "drag blocked while editing kind" )
 assert( H.cardDragPrepareAllowed( false, true, false ) === false, "drag blocked after rename click" )
 assert( H.cardDragPrepareAllowed( false, false, true ) === false, "drag blocked while panel hidden" )
+assert( H.cardPointerPressState().dragStarted === false, "pointer press clears drag" )
+assert( H.cardPointerPressState().suppressClick === false, "pointer press clears suppress" )
+assert( H.cardPointerMoveDecision( 10, 10, 24, true, false ).startDrag === false, "pointer under threshold" )
+assert( H.cardPointerMoveDecision( 20, 10, 24, true, false ).startDrag === true, "pointer meets threshold" )
+assert( H.cardPointerMoveDecision( 20, 10, 24, true, false ).suppressClick === true, "pointer drag suppresses click" )
+assert( H.cardPointerMoveDecision( 100, 100, 24, false, false ).startDrag === false, "pointer move blocked while rename" )
+assert( H.cardPointerMoveDecision( 100, 100, 24, true, true ).startDrag === false, "pointer move ignored if drag started" )
+assert( H.shouldSelectOnCardClick( false ) === true, "click selects when not dragging" )
+assert( H.shouldSelectOnCardClick( true ) === false, "click ignored after drag start" )
+assert( H.shouldRestoreBarKeyFocusAfterCardSelect( false ) === true, "restore focus after select" )
+assert( H.shouldRestoreBarKeyFocusAfterCardSelect( true ) === false, "keep focus while still renaming" )
+assert( H.shouldBlockCardDragAfterKindCommit( true ) === true, "block drag after rename commit click" )
+assert( H.shouldBlockCardDragAfterKindCommit( false ) === false, "no drag block on normal click" )
 const textMime = H.dragMimeData( "text", "hello drag", "", function ( p ) { return "file://" + p } )
 assert( textMime["text/plain"] === "hello drag", "drag mime text/plain" )
 assert( textMime["text/plain;charset=utf-8"] === "hello drag", "drag mime text charset" )

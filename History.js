@@ -443,6 +443,33 @@ function cardDragPrepareAllowed(kindEditing, blockCardDrag, dragPanelHidden) {
   return !kindEditing && !blockCardDrag && !dragPanelHidden
 }
 
+// Card pointer state machine (Overlay MouseArea). Headless stand-in for
+// click-vs-drag after search/rename TextInput focus.
+function cardPointerPressState() {
+  return { dragStarted: false, suppressClick: false }
+}
+
+function cardPointerMoveDecision(dx, dy, thresholdPx, prepareAllowed, dragStarted) {
+  if (dragStarted || !prepareAllowed)
+    return { startDrag: false, suppressClick: false }
+  var dist = Math.abs(Number(dx) || 0) + Math.abs(Number(dy) || 0)
+  if (dist < Number(thresholdPx) || isNaN(dist))
+    return { startDrag: false, suppressClick: false }
+  return { startDrag: true, suppressClick: true }
+}
+
+function shouldSelectOnCardClick(suppressClick) {
+  return !suppressClick
+}
+
+function shouldRestoreBarKeyFocusAfterCardSelect(kindEditing) {
+  return !kindEditing
+}
+
+function shouldBlockCardDragAfterKindCommit(wasEditing) {
+  return !!wasEditing
+}
+
 function dragMimeData(entryType, fullText, path, fileUrlFn) {
   if (entryType === "image") {
     var url = fileUrlFn(path)

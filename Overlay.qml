@@ -1061,38 +1061,39 @@ Item {
                 property bool suppressClick: false
 
                 onPressed: function (mouse) {
+                  var st = History.cardPointerPressState()
                   pressX = mouse.x
                   pressY = mouse.y
-                  dragStarted = false
-                  suppressClick = false
+                  dragStarted = st.dragStarted
+                  suppressClick = st.suppressClick
                 }
 
                 onPositionChanged: function (mouse) {
-                  if (dragStarted || !(mouse.buttons & Qt.LeftButton))
+                  if (!(mouse.buttons & Qt.LeftButton))
                     return
-                  if (!root.cardDragAllowed())
-                    return
-                  var dist = Math.abs(mouse.x - pressX) + Math.abs(mouse.y - pressY)
-                  if (dist < root.cardDragThresholdPx)
+                  var decision = History.cardPointerMoveDecision(
+                    mouse.x - pressX, mouse.y - pressY,
+                    root.cardDragThresholdPx, root.cardDragAllowed(), dragStarted
+                  )
+                  if (!decision.startDrag)
                     return
                   dragStarted = true
-                  suppressClick = true
+                  suppressClick = decision.suppressClick
                   root.beginCardDrag(card.index, pressX, pressY, card)
                 }
 
                 onClicked: {
-                  if (suppressClick) {
+                  if (!History.shouldSelectOnCardClick(suppressClick)) {
                     suppressClick = false
                     return
                   }
                   var wasEditing = root.kindEditing
                   root.commitKindEditIfNeeded()
-                  if (wasEditing)
+                  if (History.shouldBlockCardDragAfterKindCommit(wasEditing))
                     root.blockCardDrag = true
                   root.selectedIndex = card.index
                   root.copySelected(false)
-                  // Leave search/rename TextInput so later clicks and keys hit the bar.
-                  if (!root.kindEditing)
+                  if (History.shouldRestoreBarKeyFocusAfterCardSelect(root.kindEditing))
                     root.restoreBarKeyFocus()
                 }
 
