@@ -18,7 +18,7 @@ Optional settings at `~/.config/omapaste/qml-config.json`. If missing, defaults 
 | `default_keep` | `1h`, `1d`, `7d`, `forever` | Keep preset for new clips |
 | `max_items` | positive int | Cap on stored clips |
 | `paste_keys` | `auto`, `shift-insert`, `ctrl-v` | Keys sent after Enter-to-paste (`auto` uses Shift+Insert in terminals, Ctrl+V elsewhere) |
-| `ignore_secrets` | bool | Reserved; capture always skips `x-kde-passwordManagerHint` / sensitive clipboard state today |
+| `ignore_secrets` | bool | Skip password-manager / sensitive clipboard (`false` to allow) |
 
 Example file in the repo: [share/qml-config.example.json](../share/qml-config.example.json).
 
