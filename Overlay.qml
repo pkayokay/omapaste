@@ -132,9 +132,9 @@ Item {
   }
 
   function openSearch(prefix) {
+    root.commitKindEditIfNeeded()
     root.searchOpen = true
     root.shortcutsOpen = false
-    root.kindEditing = false
     if (prefix && prefix.length)
       root.filterText = prefix
     root.rebuildDisplay()
@@ -158,10 +158,10 @@ Item {
     if (root.hiding)
       return
     root.hiding = true
+    root.commitKindEditIfNeeded()
     root.shortcutsOpen = false
     root.searchOpen = false
     root.filterText = ""
-    root.kindEditing = false
     slideAnim.stop()
     root.animateSlide(1.0, function () {
       root.opened = false
@@ -241,16 +241,16 @@ Item {
   }
 
   function setFilter(nextFilter) {
+    root.commitKindEditIfNeeded()
     root.filterText = nextFilter
     root.selectedIndex = 0
-    root.kindEditing = false
     root.rebuildDisplay()
   }
 
   function select(delta) {
     if (displayModel.count === 0)
       return
-    root.kindEditing = false
+    root.commitKindEditIfNeeded()
     root.selectedIndex = (root.selectedIndex + delta + displayModel.count) % displayModel.count
     cardList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
     root.copySelected(false)
@@ -259,7 +259,7 @@ Item {
   function selectAbsolute(index) {
     if (displayModel.count === 0)
       return
-    root.kindEditing = false
+    root.commitKindEditIfNeeded()
     root.selectedIndex = Math.max(0, Math.min(index, displayModel.count - 1))
     cardList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
     root.copySelected(false)
@@ -340,12 +340,19 @@ Item {
     if (!root.kindEditing)
       return
     var row = root.currentRow()
+    var text = root.kindEditText
     root.kindEditing = false
+    root.kindEditText = ""
     if (!row)
       return
-    root.history = History.renameKindAt(root.history, row.historyIndex, root.kindEditText)
+    root.history = History.renameKindAt(root.history, row.historyIndex, text)
     root.saveHistory()
     root.rebuildDisplay()
+  }
+
+  function commitKindEditIfNeeded() {
+    if (root.kindEditing)
+      root.commitKindEdit()
   }
 
   function cancelKindEdit() {
@@ -354,7 +361,7 @@ Item {
   }
 
   function openIssues() {
-    Quickshell.execDetached(["xdg-open", root.issuesUrl])
+    Util.execArgv(["xdg-open", root.issuesUrl])
     root.dismiss()
   }
 
@@ -471,11 +478,6 @@ Item {
         border.color: root.border
         border.width: 1
         radius: 0
-
-      MouseArea {
-        anchors.fill: parent
-        onClicked: {}
-      }
 
       Column {
         anchors.fill: parent
@@ -633,13 +635,17 @@ Item {
               color: Util.alpha(root.foreground, shortcutsMa.containsMouse ? 1 : 0.8)
               font.pixelSize: Style.font.bodySmall
             }
-            MouseArea {
-              id: shortcutsMa
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.shortcutsOpen = !root.shortcutsOpen
-            }
+              MouseArea {
+                id: shortcutsMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                z: 1
+                onClicked: {
+                  root.commitKindEditIfNeeded()
+                  root.shortcutsOpen = !root.shortcutsOpen
+                }
+              }
           }
 
           Rectangle {
@@ -653,13 +659,14 @@ Item {
               color: Util.alpha(root.foreground, issuesMa.containsMouse ? 1 : 0.8)
               font.pixelSize: Style.font.body
             }
-            MouseArea {
-              id: issuesMa
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: root.openIssues()
-            }
+              MouseArea {
+                id: issuesMa
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                z: 1
+                onClicked: root.openIssues()
+              }
           }
         }
 
@@ -853,6 +860,7 @@ Item {
                 enabled: !card.editingKind
                 z: -1
                 onClicked: {
+                  root.commitKindEditIfNeeded()
                   root.selectedIndex = card.index
                   root.copySelected(false)
                 }
@@ -863,12 +871,12 @@ Item {
         }
       }
 
-      // Shortcuts panel
+      // Shortcuts panel — inside the bar; above the bar is clipped by barClipper.
       Rectangle {
         visible: root.shortcutsOpen
+        anchors.top: parent.top
+        anchors.topMargin: 48
         anchors.right: parent.right
-        anchors.bottom: parent.top
-        anchors.bottomMargin: 8
         anchors.rightMargin: 8
         width: 260
         height: shortcutsCol.implicitHeight + 20
@@ -876,7 +884,7 @@ Item {
         border.color: root.border
         border.width: 1
         radius: 0
-        z: 5
+        z: 30
 
         Column {
           id: shortcutsCol
@@ -939,6 +947,7 @@ Item {
       Item {
         id: keyCatcher
         anchors.fill: parent
+        z: -2
         focus: true
         Keys.priority: Keys.BeforeItem
       Keys.onPressed: function (event) {
