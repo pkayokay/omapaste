@@ -1,6 +1,6 @@
 # Omapaste
 
-Clipboard history for [Omarchy](https://omarchy.org). Inspired by [Paste](https://pasteapp.io) for Mac.
+Clipboard manager for [Omarchy](https://omarchy.org). Inspired by [Paste](https://pasteapp.io) for Mac.
 
 ![Omapaste clipboard history bar](share/screenshot.png)
 
