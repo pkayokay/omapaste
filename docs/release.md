@@ -25,12 +25,10 @@ If a release mixes features and fixes, bump **minor**. Use **patch** only when n
    bash tests/qml-shell-parity.sh
    omarchy plugin validate "$(pwd)"
    ```
-   Legacy GTK tree (optional): `cargo test` / `cargo fmt --check`.
 3. **Pick a version** using the table above.
 4. **Bump versions** (must match):
    - `manifest.json` → `version`
    - `CHANGELOG.md` → new `## X.Y.Z` section with user-facing bullets
-   - `Cargo.toml` → `version` (legacy GTK crate; keep in sync)
 5. **Update docs if behavior changed**
    - `README.md` usage table or install blurb
    - `docs/configuration.md` for new config keys
@@ -46,7 +44,7 @@ If a release mixes features and fixes, bump **minor**. Use **patch** only when n
 A release is **tag + GitHub Release**, not just the git tag. Users browsing [github.com/pkayokay/omapaste/releases](https://github.com/pkayokay/omapaste/releases) only see GitHub Releases.
 
 ```bash
-git add manifest.json Cargo.toml CHANGELOG.md   # plus any doc/UI files
+git add manifest.json CHANGELOG.md   # plus any doc/UI files
 git commit -m "Release vX.Y.Z."
 git tag -a vX.Y.Z -m "Release vX.Y.Z."
 git push origin main
@@ -106,6 +104,5 @@ Do not open a second submission issue. Close a mistaken verification issue befor
 | --- | --- |
 | `manifest.json` | `version` |
 | `CHANGELOG.md` | Release notes |
-| `Cargo.toml` | `version` (legacy crate sync) |
 | `README.md` | Usage/features if user-visible |
 | `docs/omarchy-marketplace.md` | Approved snapshot after catalog promotion |

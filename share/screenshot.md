@@ -60,4 +60,4 @@ cp /path/to/saved.png share/screenshot.png
 cp /path/to/saved.png preview.png
 ```
 
-Any fullscreen capture that includes the QML bar and the terminal is fine. Do not ship the legacy GTK daemon look.
+Any fullscreen capture that includes the QML bar and the terminal is fine.

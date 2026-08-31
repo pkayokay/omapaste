@@ -2,7 +2,7 @@
 
 Development contract for omapaste.
 
-> **Product path:** Quattro-native QML (no Rust daemon). Read [docs/omarchy-plugin.md](docs/omarchy-plugin.md) first. User docs: [README.md](README.md). Rust/GTK under `src/` is **legacy** — [docs/legacy-gtk.md](docs/legacy-gtk.md). Marketplace: [docs/omarchy-marketplace.md](docs/omarchy-marketplace.md). Handoff notes: [docs/TEMP-qml-port-plan.md](docs/TEMP-qml-port-plan.md).
+> **Product path:** Quattro-native QML plugin. Read [docs/omarchy-plugin.md](docs/omarchy-plugin.md) first. User docs: [README.md](README.md). Marketplace: [docs/omarchy-marketplace.md](docs/omarchy-marketplace.md).
 
 ## QML daily loop
 
@@ -21,19 +21,7 @@ ln -sfn "$(pwd)" ~/.config/omarchy/plugins/io.github.pkayokay.omapaste
 omarchy plugin enable io.github.pkayokay.omapaste
 ```
 
-Do **not** require `./install.sh` or `omapaste` on `PATH`. Do **not** `pkill` Omarchy’s stock clipboard watchers.
-
----
-
-## Legacy GTK / Rust (inactive)
-
-Omapaste historically shipped a **Rust GTK4** clipboard-history bar. That tree remains under `src/` for reference. See [docs/legacy-gtk.md](docs/legacy-gtk.md) if you need it.
-
-```bash
-cargo test
-```
-
-Do **not** run `omapaste toggle` / `show` / `hide` from tests against a live daemon.
+Do **not** `pkill` Omarchy’s stock clipboard watchers.
 
 ## Where to change what (QML)
 
@@ -64,8 +52,6 @@ node tests/qml-parity.mjs
 bash tests/qml-shell-parity.sh
 omarchy plugin validate "$(pwd)"
 ```
-
-Default `cargo test` (legacy) must stay headless and off the session bus.
 
 When you add behavior, add a test next to it (JS helpers in `History.js` / `Config.js`, shell cases in `tests/qml-shell-parity.sh`).
 

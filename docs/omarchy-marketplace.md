@@ -122,7 +122,6 @@ Pre-flight: `omarchy plugin validate "$(pwd)"`, `manifest.json` version matches 
 - `omarchy plugin add … --enable` is the full install (QML service + overlay). No `omapaste` binary on `PATH`.
 - Optional Super+Shift+V is a hand-edited Hyprland bind; plugin enable/disable does not edit Hyprland config.
 - External deps: wl-clipboard, wtype, python, jq (and Omarchy Quattro / `omarchy-shell`).
-- Legacy GTK under `src/` is reference only; do not tell catalog users to run `./install.sh`.
 
 ## Checklist before any marketplace action
 
