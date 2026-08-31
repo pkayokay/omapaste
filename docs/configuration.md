@@ -2,7 +2,7 @@
 
 ## `qml-config.json`
 
-Optional settings at `~/.config/omapaste/qml-config.json`. If missing, defaults apply (same spirit as the old `config.toml`).
+Optional settings at `~/.config/omapaste/qml-config.json`. If missing, defaults apply.
 
 ```json
 {
@@ -40,7 +40,3 @@ Without a bind: `omarchy-shell shell summon io.github.pkayokay.omapaste '{}'`.
 | `~/.local/state/omapaste/qml-ignore-hash` | Ephemeral hash so self-copies are not re-ingested |
 
 To reset sample tips: disable the plugin, delete `history.sqlite` (and the `.stamp` / stage files if present), enable again (seeds only when the DB has no rows).
-
-## Legacy GTK paths
-
-The old daemon used `~/.config/omapaste/config.toml` and `~/.local/share/omapaste/history.sqlite`. Those are unused by the QML plugin. See [legacy-gtk.md](legacy-gtk.md).

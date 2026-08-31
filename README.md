@@ -4,7 +4,7 @@ Clipboard manager for [Omarchy](https://omarchy.org). Inspired by [Paste](https:
 
 ![Omapaste clipboard history bar](share/screenshot.png)
 
-Omapaste is an **Omarchy Quattro plugin**: a bottom card timeline for clipboard history. It watches what you copy, and summons a bar so you can grab an older clip without losing the current one. No separate daemon or `./install.sh` — install is one Omarchy plugin command.
+It watches what you copy and summons a bottom card bar so you can grab an older clip without losing the current one.
 
 ## What it does
 
@@ -74,12 +74,8 @@ Omarchy’s Super+Ctrl+V picker is a vertical list that copies onto the clipboar
 
 | Doc | Contents |
 | --- | --- |
-| [docs/omarchy-plugin.md](docs/omarchy-plugin.md) | Plugin install, update, remove, Hyprland bind |
+| [docs/omarchy-plugin.md](docs/omarchy-plugin.md) | Install, update, remove, Hyprland bind |
 | [docs/configuration.md](docs/configuration.md) | `qml-config.json`, data paths |
-| [docs/legacy-gtk.md](docs/legacy-gtk.md) | Old Rust/GTK daemon notes |
-| [docs/omarchy-marketplace.md](docs/omarchy-marketplace.md) | Catalog / re-verify notes |
-| [docs/release.md](docs/release.md) | Release checklist |
-| [AGENTS.md](AGENTS.md) | Development notes |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ## Issues

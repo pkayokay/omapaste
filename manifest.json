@@ -5,7 +5,7 @@
   "version": "0.3.1",
   "author": "Paul Kim",
   "license": "MIT",
-  "description": "Paste-style clipboard history bar for Omarchy (Quattro plugin). No separate daemon.",
+  "description": "Clipboard manager for Omarchy. Bottom card bar; one-command plugin install.",
   "kinds": ["service", "overlay"],
   "keepLoaded": true,
   "entryPoints": {

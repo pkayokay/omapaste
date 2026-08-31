@@ -20,8 +20,6 @@ sudo pacman -S --needed wl-clipboard wtype python jq
 
 ## Install
 
-One command — no `./install.sh`, no Rust, no cargo:
-
 ```bash
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
 ```
@@ -98,6 +96,4 @@ Use **toggle** for Super+Shift+V so the bind opens and closes the bar.
 
 ## Marketplace
 
-Catalog page: [omarchyplugins.com — Omapaste](https://omarchyplugins.com/plugin.html?id=io.github.pkayokay.omapaste).
-
-After merging **0.3.0** to `main`, re-verify the catalog so the listing can use **standard** `omarchy plugin add … --enable` (no manual `install.sh`). Maintainer notes: [omarchy-marketplace.md](omarchy-marketplace.md).
+Catalog page: [omarchyplugins.com — Omapaste](https://omarchyplugins.com/plugin.html?id=io.github.pkayokay.omapaste). Maintainer re-verify workflow: [omarchy-marketplace.md](omarchy-marketplace.md).
