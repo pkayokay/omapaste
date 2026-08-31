@@ -62,8 +62,8 @@ omarchy-shell shell summon io.github.pkayokay.omapaste '{}'
 | Double-click kind label | Rename |
 | Type | Search |
 | Clear (✕) while searching | Clear the search query |
-| `?` | Shortcut list |
-| `↗` | Open the GitHub issue tracker and close |
+| `?` (key) | Shortcut list |
+| `?` (header button) | Open GitHub issues and close |
 | Esc | Close shortcuts, then search, then the bar |
 
 ## Why not the built-in Omarchy clipboard?

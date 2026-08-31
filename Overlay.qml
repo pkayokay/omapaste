@@ -49,7 +49,7 @@ Item {
 
   readonly property var activeScreen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
 
-  // Omarchy theme tokens (matches src/theme.rs CSS).
+  // Omarchy theme tokens (Style / Color from Quickshell).
   readonly property color background: Util.alpha(Color.background, 0.96)
   readonly property color foreground: Color.foreground
   readonly property color border: Util.alpha(Color.foreground, 0.10)

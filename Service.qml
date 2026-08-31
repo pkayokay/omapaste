@@ -40,14 +40,14 @@ Item {
   property bool historyListQueued: false
   property bool historySaveQueued: false
 
-  // Text samples aligned with src/store.rs SEED_CLIPS (text only in GTK seed).
+  // First-run sample clips when history.sqlite is empty.
   readonly property var seedClips: [
     {
       type: "text",
-      text: "fn greet(name: &str)\n  -> String {\n  format!(\"hi {name}\")\n}",
+      text: "function greet(name) {\n  return `hi ${name}`\n}",
       kind: "Code",
       keep: "7d",
-      hash: "seed-rust-greet"
+      hash: "seed-code-greet"
     },
     {
       type: "text",

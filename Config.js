@@ -1,7 +1,6 @@
 .pragma library
 
-// Lightweight defaults mirroring src/config.rs DEFAULT_CONFIG.
-// Optional ~/.config/omapaste/qml-config.json overrides (JSON, not TOML, for QML FileView).
+// Defaults for ~/.config/omapaste/qml-config.json (optional overrides via FileView).
 
 var DEFAULTS = {
   default_keep: "1d",

@@ -22,7 +22,6 @@
 - Paste runs after the bar hides; copied clips move to front when the bar closes
 - Auto-install launcher desktop entry on first service load
 - README / marketplace screenshots updated for the QML bar
-- Rust/GTK tree under `src/` retained as legacy reference only
 
 ## 0.2.1
 

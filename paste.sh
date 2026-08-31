@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copy or paste a history entry for the QML omapaste experiment.
+# Copy or paste a history entry for the QML omapaste plugin.
 
 set -euo pipefail
 

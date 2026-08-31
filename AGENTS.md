@@ -60,7 +60,7 @@ When you add behavior, add a test next to it (JS helpers in `History.js` / `Conf
 - **Square chrome.** Omarchy rounding is 0.
 - **Search is 28px.** Opening it replaces History in-place and must not push the card row down.
 - **Keep Super+Ctrl+V for Omarchy.**
-- **Seed only when the history file is missing.**
+- **Seed only when the history DB has no rows.**
 - **Copying / dragging sets ignore-hash + ignore-until** so re-copy does not spam history; omapaste image path/URI text is never stored as a clip.
 - **Drag unmaps the overlay** so drops reach apps below.
 
