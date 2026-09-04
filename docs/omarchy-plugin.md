@@ -12,19 +12,14 @@ Omapaste runs **entirely inside Omarchy shell** (service + overlay). Clipboard w
 - `python` and `jq` (capture helper)
 - Hyprland (focus restore; optional toggle bind)
 
-On Omarchy / Arch:
-
-```bash
-sudo pacman -S --needed wl-clipboard wtype python jq
-```
-
+On Omarchy these are usually already present: `wl-clipboard`, `wtype`, `python`, and `jq`.
 ## Install
 
 ```bash
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
 ```
 
-That enables the plugin and registers Omapaste in app search (desktop entry + menu route) on first load. To reinstall launcher files manually: `./install-launcher.sh`.
+That enables the plugin and registers Omapaste in app search (desktop entry + menu route) on first load. To refresh launcher files manually: `./register-launcher.sh`.
 
 Summon to confirm:
 

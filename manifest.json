@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.pkayokay.omapaste",
   "name": "Omapaste",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "author": "Paul Kim",
   "license": "MIT",
   "description": "Clipboard manager for Omarchy. Bottom card bar; one-command plugin install.",

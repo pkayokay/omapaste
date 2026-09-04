@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- Rename launcher helper to `register-launcher.sh` and remove package-manager install snippets from docs for a cleaner marketplace security baseline
+
 ## 0.3.1
 
 - Render clipboard card previews as plain text so history text cannot load remote rich content in the shell

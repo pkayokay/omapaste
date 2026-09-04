@@ -23,12 +23,7 @@ It watches what you copy and summons a bottom card bar so you can grab an older 
 omarchy plugin add https://github.com/pkayokay/omapaste.git --enable
 ```
 
-System packages (usually already on Omarchy):
-
-```bash
-sudo pacman -S --needed wl-clipboard wtype python jq
-```
-
+System packages (usually already on Omarchy): `wl-clipboard`, `wtype`, `python`, and `jq`.
 Optional Hyprland toggle (**Super+Shift+V** — edit yourself; the plugin never rewrites Hyprland config):
 
 ```lua

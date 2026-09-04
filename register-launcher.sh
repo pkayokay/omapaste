@@ -11,7 +11,7 @@ STAMP="$STATE/omapaste/launcher-installed"
 QUIET="${QUIET:-0}"
 
 PLUGIN_ID=$(jq -r '.id // empty' "$SRC/manifest.json")
-[[ -n "$PLUGIN_ID" ]] || { echo "install-launcher: manifest id missing" >&2; exit 1; }
+[[ -n "$PLUGIN_ID" ]] || { echo "register-launcher: manifest id missing" >&2; exit 1; }
 VERSION=$(jq -r '.version // ""' "$SRC/manifest.json")
 MENU_KEY="apps.omapaste"
 TOGGLE="omarchy-shell shell toggle ${PLUGIN_ID} '{}'"

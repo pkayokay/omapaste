@@ -27,7 +27,7 @@ Item {
   }
   readonly property string captureScript: root.pluginDir + "/capture.sh"
   readonly property string historyScript: root.pluginDir + "/history.py"
-  readonly property string launcherScript: root.pluginDir + "/install-launcher.sh"
+  readonly property string launcherScript: root.pluginDir + "/register-launcher.sh"
   readonly property string home: Quickshell.env("HOME") || ""
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || (home + "/.local/state")
   readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (home + "/.config")
@@ -198,8 +198,8 @@ Item {
       clipboardWatchProc.running = true
   }
 
-  function installLauncher() {
-    if (root.pluginDir === "" || root.launcherScript === "/install-launcher.sh")
+  function registerLauncher() {
+    if (root.pluginDir === "" || root.launcherScript === "/register-launcher.sh")
       return
     if (launcherProc.running)
       return
@@ -211,7 +211,7 @@ Item {
   Component.onCompleted: {
     root.reloadHistory()
     startWatchersTimer.start()
-    installLauncherTimer.start()
+    registerLauncherTimer.start()
   }
   Component.onDestruction: root.stopWatchers()
 
@@ -230,10 +230,10 @@ Item {
   }
 
   Timer {
-    id: installLauncherTimer
+    id: registerLauncherTimer
     interval: 300
     repeat: false
-    onTriggered: root.installLauncher()
+    onTriggered: root.registerLauncher()
   }
 
   Process {
